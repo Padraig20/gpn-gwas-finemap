@@ -22,6 +22,7 @@ from gpn_finemap.harmonize import (
 )
 from gpn_finemap.log import configure_logging
 from gpn_finemap.metrics import compute_benchmark_tables, summarize_global
+from gpn_finemap.priors import add_entropy_prior_columns, write_prior_outputs
 from gpn_finemap.report import write_benchmark_outputs
 
 app = typer.Typer(help="Benchmark GPN-Star entropy against FinnGen fine-mapping outputs.")
@@ -161,6 +162,52 @@ def run_benchmark(
     )
     logger.info("Benchmark run complete")
     typer.echo(f"Wrote benchmark outputs to {output_dir}")
+
+
+@app.command("prepare-priors")
+def prepare_priors(
+    annotated_variants: Path = typer.Option(
+        Path("results/t2d_entropy/annotated_finemap_variants.parquet"),
+        help="Annotated variant parquet produced by `gpn-finemap run`.",
+    ),
+    output_dir: Path = typer.Option(Path("results/t2d_entropy_priors"), help="Output directory for prior files."),
+    constrained_direction: str = typer.Option(
+        "low",
+        help="Whether lower or higher entropy_calibrated means stronger constraint: low|high.",
+    ),
+    prior_method: str = typer.Option(
+        "softmax",
+        help="Entropy-to-prior transform: softmax|rank|minmax.",
+    ),
+    temperature: float = typer.Option(1.0, help="Softmax temperature; lower is more concentrated."),
+    prior_floor: float = typer.Option(1e-6, help="Small nonzero mass added before normalization."),
+    missing_policy: str = typer.Option(
+        "median",
+        help="How to fill missing entropy scores: median|uniform|least_constrained.",
+    ),
+    finemap_expected_causal_per_region: float = typer.Option(
+        1.0,
+        help="Scale FINEMAP SNP priors so probabilities sum to this expected causal count per region.",
+    ),
+    templates: bool = typer.Option(True, help="Write SuSiE/FINEMAP template run files."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show progress logging."),
+) -> None:
+    """Prepare entropy-derived prior files for SuSiE and FINEMAP."""
+
+    configure_logging(verbose)
+    logger.info("Reading annotated variants from %s", annotated_variants)
+    frame = pl.read_parquet(annotated_variants)
+    priors = add_entropy_prior_columns(
+        frame,
+        constrained_direction=constrained_direction,
+        prior_method=prior_method,
+        temperature=temperature,
+        prior_floor=prior_floor,
+        missing_policy=missing_policy,
+        finemap_expected_causal_per_region=finemap_expected_causal_per_region,
+    )
+    write_prior_outputs(priors, output_dir, include_templates=templates)
+    typer.echo(f"Wrote entropy prior files to {output_dir}")
 
 
 def _resolve_finngen_paths(

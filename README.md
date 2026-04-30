@@ -89,6 +89,24 @@ uv run gpn-finemap run --constrained-direction high
 All CLI commands support `--verbose`/`-v` to print progress logs for downloads,
 parquet scans, chromosome joins, metric computation, and output writing.
 
+Prepare entropy-derived priors for SuSiE and FINEMAP from a completed benchmark
+run:
+
+```bash
+uv run gpn-finemap prepare-priors \
+  --annotated-variants results/t2d_entropy/annotated_finemap_variants.parquet \
+  --output-dir results/t2d_entropy_priors \
+  --prior-method softmax \
+  --temperature 1.0 \
+  --finemap-expected-causal-per-region 1.0 \
+  --verbose
+```
+
+The prior command writes per-region SuSiE `prior_weights` files and FINEMAP
+`.z`-style files with an added `prob` column for `--prior-snps`. It also writes
+template run files showing where to plug in locus-specific LD matrices/master
+files.
+
 ## Metrics
 
 The benchmark reports metrics per fine-mapped region and then averages them by
@@ -117,10 +135,19 @@ Each benchmark run writes:
   rankings.
 - `report.md`: concise interpretation and run metadata.
 
+Prior preparation writes:
+
+- `entropy_priors.parquet` and `.tsv`: all annotated variants plus
+  `susie_prior_weight`, `finemap_prior_probability`, and `SNPVAR`.
+- `susie/*.prior_weights.tsv`: two-column files for passing to
+  `susie_rss(..., prior_weights = ...)`.
+- `finemap/*.prior.z`: FINEMAP-style `.z` files with an entropy-derived `prob`
+  prior column for `finemap --prior-snps`.
+- `prior_manifest.tsv`: mapping from region to generated prior files.
+
 ## Future Extension
 
-If entropy-only ranking shows signal, the next benchmark should make entropy a
-prior rather than a standalone ranker. A practical path is to convert entropy
-into functional annotations, estimate prior causal probabilities genome-wide,
-and compare uniform-prior SuSiE/FINEMAP against entropy-informed
-SuSiE/FINEMAP/PolyFun-style runs on matched FinnGen loci.
+The next benchmark should run matched uniform-prior and entropy-prior
+SuSiE/FINEMAP jobs with the same summary statistics, loci, and LD matrices, then
+compare PIP calibration, credible-set size, and recovery of FinnGen lead/high-PIP
+variants.
