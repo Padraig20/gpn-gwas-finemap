@@ -142,7 +142,7 @@ def _prepare_region_variants(group: pl.DataFrame, max_variants: int) -> pl.DataF
     z_expr = _z_expression(group)
     prepared = (
         group.with_columns(z_expr.alias("z"))
-        .filter(pl.col("z").is_not_null() & pl.col("variant_id").is_not_null())
+        .filter(pl.col("z").is_not_null() & pl.col("z").is_finite() & pl.col("variant_id").is_not_null())
         .unique(subset=["variant_id"], keep="first")
         .sort("pos")
     )
@@ -342,6 +342,11 @@ def _infer_ld_row(row: list[str]) -> tuple[int, int, float]:
 
 
 def _write_ld_matrix(matrix: np.ndarray, path: Path) -> None:
+    matrix = np.asarray(matrix, dtype=float)
+    matrix = np.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
+    matrix = np.clip(matrix, -1.0, 1.0)
+    matrix = (matrix + matrix.T) / 2
+    np.fill_diagonal(matrix, 1.0)
     np.savetxt(path, matrix, fmt="%.8g")
 
 
@@ -354,6 +359,7 @@ def _run_susie(config: FineMappingRunConfig, inputs: dict[str, Path], ld_path: P
         str(ld_path),
         str(out_prefix),
         str(config.max_causal),
+        str(config.n_samples),
     ]
     logger.info("Running SuSiE: %s", " ".join(command))
     subprocess.run(command, check=True)
@@ -388,17 +394,37 @@ z_path <- args[[1]]
 ld_path <- args[[2]]
 out_prefix <- args[[3]]
 L <- as.integer(args[[4]])
+n <- if (length(args) >= 5) as.integer(args[[5]]) else NA_integer_
 
 suppressPackageStartupMessages(library(susieR))
 
 z <- read.delim(z_path, check.names = FALSE)
 R <- as.matrix(read.table(ld_path, header = FALSE))
-fit <- susie_rss(
+if (nrow(R) != ncol(R)) {
+  stop("LD matrix must be square")
+}
+if (nrow(R) != nrow(z)) {
+  stop("LD matrix dimensions must match the number of z-score rows")
+}
+if (any(!is.finite(z$z))) {
+  stop("SuSiE z-score input contains non-finite values")
+}
+if (any(!is.finite(z$susie_prior_weight))) {
+  stop("SuSiE prior input contains non-finite values")
+}
+R[!is.finite(R)] <- 0
+R <- (R + t(R)) / 2
+diag(R) <- 1
+fit_args <- list(
   z = z$z,
   R = R,
   prior_weights = z$susie_prior_weight,
   L = L
 )
+if (!is.na(n) && n > 0) {
+  fit_args$n <- n
+}
+fit <- do.call(susie_rss, fit_args)
 out <- data.frame(
   variant_id = z$variant_id,
   z = z$z,
