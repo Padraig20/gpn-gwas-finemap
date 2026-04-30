@@ -107,6 +107,57 @@ The prior command writes per-region SuSiE `prior_weights` files and FINEMAP
 template run files showing where to plug in locus-specific LD matrices/master
 files.
 
+Run matched uniform-prior and entropy-prior SuSiE/FINEMAP jobs end-to-end:
+
+```bash
+uv run gpn-finemap run-fine-mapping \
+  --annotated-variants results/t2d_entropy/annotated_finemap_variants.parquet \
+  --output-dir results/t2d_entropy_finemap \
+  --ld-bcor-dir data/finngen_ld \
+  --ldstore-exe /path/to/ldstore \
+  --rscript-exe Rscript \
+  --finemap-exe /path/to/finemap \
+  --download-ld-bcor \
+  --max-regions 2 \
+  --verbose
+```
+
+Requirements for the end-to-end runner:
+
+- `LDstore v1.1` to extract LD tables from FinnGen/SISu `FG_LD_chr*.bcor`
+  files.
+- `Rscript` with the R package `susieR` installed.
+- `FINEMAP v1.4` or compatible executable.
+- Enough disk space for FinnGen public LD BCOR files. They are several GB per
+  chromosome; omit `--download-ld-bcor` if you staged them yourself.
+
+FinnGen notes that the public SISu LD estimates are not preferred for precise
+fine-mapping because in-sample LD is better. Use this runner for a reproducible
+public benchmark, and swap in better matched LD through `--ld-matrix-dir` when
+available.
+
+If you already have per-region FINEMAP/SuSiE LD matrices in the same variant
+order as the generated region inputs, use `--ld-matrix-dir` instead of
+`--ld-bcor-dir`. For a smoke test only, `--allow-identity-ld --run-susie false
+--run-finemap false` prepares inputs without external tools.
+
+Ask whether high-PIP SNPs are enriched for high predicted conservation:
+
+```bash
+uv run gpn-finemap conservation-enrichment \
+  --annotated-variants results/t2d_entropy/annotated_finemap_variants.parquet \
+  --output-dir results/t2d_conservation_enrichment \
+  --pip-thresholds 0.1,0.5,0.9 \
+  --conservation-quantiles 0.9,0.95 \
+  --n-permutations 10000 \
+  --verbose
+```
+
+This mirrors the ChromBPNet-style question but swaps accessibility for
+conservation: within each fine-mapped region, it tests whether high-PIP SNPs
+overlap the most conserved SNPs more often than expected after randomly drawing
+the same number of SNPs from that region.
+
 ## Metrics
 
 The benchmark reports metrics per fine-mapped region and then averages them by
@@ -144,6 +195,27 @@ Prior preparation writes:
 - `finemap/*.prior.z`: FINEMAP-style `.z` files with an entropy-derived `prob`
   prior column for `finemap --prior-snps`.
 - `prior_manifest.tsv`: mapping from region to generated prior files.
+
+End-to-end fine-mapping writes:
+
+- `fine_mapping_manifest.tsv`: region-level manifest linking LD, z, and output
+  files.
+- `regions/<region>/entropy/` and `regions/<region>/uniform/`: matched input
+  files for entropy-prior and uniform-prior runs.
+- `regions/<region>/*.ld`: LD matrix used for both methods.
+- `regions/<region>/susie_entropy.pip.tsv` and
+  `regions/<region>/susie_uniform.pip.tsv`: SuSiE PIPs when SuSiE is run.
+- `regions/<region>/finemap_entropy/` and `regions/<region>/finemap_uniform/`:
+  FINEMAP master/output files when FINEMAP is run.
+
+Conservation enrichment writes:
+
+- `region_enrichment.tsv`: per-region observed vs expected overlap between
+  high-PIP SNPs and top-conservation SNPs.
+- `global_enrichment.tsv`: aggregate fold enrichment and empirical p-values.
+- `null_overlaps.tsv`: permutation null overlap counts.
+- `conservation_enrichment.png`: global fold-enrichment plot.
+- `conservation_enrichment.md`: compact report for the analysis question.
 
 ## Future Extension
 

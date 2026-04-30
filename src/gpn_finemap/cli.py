@@ -8,6 +8,7 @@ from pathlib import Path
 import polars as pl
 import typer
 
+from gpn_finemap.conservation import run_conservation_enrichment
 from gpn_finemap.entropy import inspect_entropy_files, validate_entropy_files
 from gpn_finemap.finngen import (
     DEFAULT_RELEASE,
@@ -15,6 +16,7 @@ from gpn_finemap.finngen import (
     scan_finemap_snps,
     scan_summary_stats,
 )
+from gpn_finemap.fine_mapping import FineMappingRunConfig, check_fine_mapping_tools, run_fine_mapping
 from gpn_finemap.harmonize import (
     add_entropy_rank_score,
     harmonization_diagnostics,
@@ -210,6 +212,126 @@ def prepare_priors(
     typer.echo(f"Wrote entropy prior files to {output_dir}")
 
 
+@app.command("run-fine-mapping")
+def run_fine_mapping_command(
+    annotated_variants: Path = typer.Option(
+        Path("results/t2d_entropy/annotated_finemap_variants.parquet"),
+        help="Annotated variant parquet produced by `gpn-finemap run`.",
+    ),
+    output_dir: Path = typer.Option(Path("results/t2d_entropy_finemap"), help="Output directory for fine-mapping runs."),
+    ld_bcor_dir: Path | None = typer.Option(None, help="Directory containing FinnGen/SISu `FG_LD_chr*.bcor` files."),
+    ld_matrix_dir: Path | None = typer.Option(None, help="Directory with precomputed per-region `.ld` matrices."),
+    ldstore_exe: str = typer.Option("ldstore", help="Path/name of LDstore executable."),
+    rscript_exe: str = typer.Option("Rscript", help="Path/name of Rscript executable with susieR installed."),
+    finemap_exe: str = typer.Option("finemap", help="Path/name of FINEMAP executable."),
+    source_method: str = typer.Option("SUSIE", help="Rows to use from annotated variants: SUSIE or FINEMAP."),
+    constrained_direction: str = typer.Option("low", help="Whether lower or higher entropy means stronger constraint: low|high."),
+    prior_method: str = typer.Option("softmax", help="Entropy-to-prior transform: softmax|rank|minmax."),
+    temperature: float = typer.Option(1.0, help="Softmax temperature; lower is more concentrated."),
+    prior_floor: float = typer.Option(1e-6, help="Small nonzero mass added before normalization."),
+    missing_policy: str = typer.Option("median", help="How to fill missing entropy: median|uniform|least_constrained."),
+    finemap_expected_causal_per_region: float = typer.Option(
+        1.0,
+        help="Scale FINEMAP SNP priors so probabilities sum to this expected causal count per region.",
+    ),
+    max_causal: int = typer.Option(10, help="Maximum causal variants for SuSiE/FINEMAP."),
+    n_samples: int = typer.Option(3775, help="LD reference sample size for FINEMAP master files."),
+    max_regions: int | None = typer.Option(None, help="Limit number of regions, useful for smoke tests."),
+    max_variants: int = typer.Option(5000, help="Skip/trim very large regions to this many variants."),
+    run_susie: bool = typer.Option(True, help="Run SuSiE jobs."),
+    run_finemap: bool = typer.Option(True, help="Run FINEMAP jobs."),
+    allow_identity_ld: bool = typer.Option(False, help="Use identity LD when no LD source is provided; smoke tests only."),
+    download_ld_bcor: bool = typer.Option(
+        False,
+        help="Download missing FinnGen public BCOR files into --ld-bcor-dir. Files are several GB each.",
+    ),
+    check_tools_only: bool = typer.Option(False, help="Only check external tool availability and exit."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show progress logging."),
+) -> None:
+    """Run matched uniform-prior and entropy-prior SuSiE/FINEMAP analyses."""
+
+    configure_logging(verbose)
+    config = FineMappingRunConfig(
+        annotated_variants=annotated_variants,
+        output_dir=output_dir,
+        ld_bcor_dir=ld_bcor_dir,
+        ld_matrix_dir=ld_matrix_dir,
+        ldstore_exe=ldstore_exe,
+        rscript_exe=rscript_exe,
+        finemap_exe=finemap_exe,
+        source_method=source_method,
+        constrained_direction=constrained_direction,
+        prior_method=prior_method,
+        temperature=temperature,
+        prior_floor=prior_floor,
+        missing_policy=missing_policy,
+        finemap_expected_causal_per_region=finemap_expected_causal_per_region,
+        max_causal=max_causal,
+        n_samples=n_samples,
+        max_regions=max_regions,
+        max_variants=max_variants,
+        run_susie=run_susie,
+        run_finemap=run_finemap,
+        allow_identity_ld=allow_identity_ld,
+        download_ld_bcor=download_ld_bcor,
+    )
+    missing = check_fine_mapping_tools(config)
+    if missing:
+        message = "Missing required external tool(s): " + ", ".join(missing)
+        if check_tools_only:
+            typer.echo(message)
+            raise typer.Exit(1)
+        raise typer.BadParameter(message)
+    if check_tools_only:
+        typer.echo("All requested external tools are available.")
+        return
+
+    manifest = run_fine_mapping(config)
+    typer.echo(f"Wrote fine-mapping manifest with {manifest.height} region(s) to {output_dir}")
+
+
+@app.command("conservation-enrichment")
+def conservation_enrichment(
+    annotated_variants: Path = typer.Option(
+        Path("results/t2d_entropy/annotated_finemap_variants.parquet"),
+        help="Annotated variant parquet produced by `gpn-finemap run`.",
+    ),
+    output_dir: Path = typer.Option(
+        Path("results/t2d_conservation_enrichment"),
+        help="Output directory for enrichment tables and report.",
+    ),
+    pip_thresholds: str = typer.Option(
+        "0.1,0.5,0.9",
+        help="Comma-separated PIP thresholds defining high statistical probability.",
+    ),
+    conservation_quantiles: str = typer.Option(
+        "0.9,0.95",
+        help="Comma-separated within-region conservation quantiles. 0.95 means top 5%.",
+    ),
+    constrained_direction: str = typer.Option(
+        "low",
+        help="Whether lower or higher entropy_calibrated means stronger conservation: low|high.",
+    ),
+    n_permutations: int = typer.Option(10_000, help="Within-region randomizations for empirical p-values."),
+    seed: int = typer.Option(13, help="Random seed for permutation tests."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show progress logging."),
+) -> None:
+    """Ask whether high-PIP SNPs are enriched for high predicted conservation."""
+
+    configure_logging(verbose)
+    tables = run_conservation_enrichment(
+        annotated_variants=annotated_variants,
+        output_dir=output_dir,
+        pip_thresholds=_parse_float_list(pip_thresholds),
+        conservation_quantiles=_parse_float_list(conservation_quantiles),
+        constrained_direction=constrained_direction,
+        n_permutations=n_permutations,
+        seed=seed,
+    )
+    global_rows = tables["global_enrichment"].height
+    typer.echo(f"Wrote conservation enrichment results with {global_rows} global row(s) to {output_dir}")
+
+
 def _resolve_finngen_paths(
     cache_dir: Path,
     release: int,
@@ -262,3 +384,10 @@ def _join_summary_baseline(fine_map: pl.LazyFrame, summary_path: Path) -> pl.Laz
     logger.info("Scanning summary baseline file: %s", summary_path)
     summary = scan_summary_stats(summary_path).select("chrom", "pos", "ref", "alt", "pval")
     return fine_map.join(summary, on=["chrom", "pos", "ref", "alt"], how="left")
+
+
+def _parse_float_list(value: str) -> list[float]:
+    floats = [float(part.strip()) for part in value.split(",") if part.strip()]
+    if not floats:
+        raise typer.BadParameter("Expected at least one comma-separated float")
+    return floats
