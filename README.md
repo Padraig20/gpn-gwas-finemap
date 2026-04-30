@@ -215,6 +215,9 @@ Conservation enrichment writes:
 - `global_enrichment.tsv`: aggregate fold enrichment and empirical p-values.
 - `null_overlaps.tsv`: permutation null overlap counts.
 - `conservation_enrichment.png`: global fold-enrichment plot.
+- `overlap_enrichment_by_max_pip.png`: ChromBPNet-style curve plot with max PIP
+  on the x-axis and overlap enrichment on a log y-axis.
+- `overlap_enrichment_curves.tsv`: data behind the curve plot.
 - `conservation_enrichment.md`: compact report for the analysis question.
 
 ## Future Extension

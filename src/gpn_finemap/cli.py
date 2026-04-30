@@ -314,6 +314,10 @@ def conservation_enrichment(
     ),
     n_permutations: int = typer.Option(10_000, help="Within-region randomizations for empirical p-values."),
     seed: int = typer.Option(13, help="Random seed for permutation tests."),
+    chrombpnet_style_plot: bool = typer.Option(
+        True,
+        help="Also write overlap_enrichment_by_max_pip.png, a ChromBPNet-style curve plot.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show progress logging."),
 ) -> None:
     """Ask whether high-PIP SNPs are enriched for high predicted conservation."""
@@ -327,6 +331,7 @@ def conservation_enrichment(
         constrained_direction=constrained_direction,
         n_permutations=n_permutations,
         seed=seed,
+        chrombpnet_style_plot=chrombpnet_style_plot,
     )
     global_rows = tables["global_enrichment"].height
     typer.echo(f"Wrote conservation enrichment results with {global_rows} global row(s) to {output_dir}")
