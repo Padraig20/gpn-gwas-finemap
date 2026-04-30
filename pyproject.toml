@@ -1,0 +1,25 @@
+[project]
+name = "gpn-finemap"
+version = "0.1.0"
+description = "Benchmark GPN-Star entropy as a prior-like signal for GWAS fine-mapping."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "matplotlib",
+    "numpy",
+    "polars",
+    "pyarrow",
+    "scikit-learn",
+    "scipy",
+    "typer",
+]
+
+[project.scripts]
+gpn-finemap = "gpn_finemap.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gpn_finemap"]
