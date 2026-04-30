@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Iterable
 
@@ -13,6 +14,7 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 DEFAULT_PIP_THRESHOLDS = (0.1, 0.5, 0.9)
 DEFAULT_TOP_K = (1, 5, 10, 50)
 DEFAULT_TOP_FRACTIONS = (0.01, 0.05, 0.1)
+logger = logging.getLogger(__name__)
 
 
 def compute_benchmark_tables(
@@ -23,14 +25,17 @@ def compute_benchmark_tables(
 ) -> dict[str, pl.DataFrame]:
     """Compute per-region entropy benchmark summaries."""
 
+    logger.info("Computing benchmark metrics for %d annotated rows", frame.height)
     prepared = _prepare_frame(frame)
     summary_rows: list[dict[str, object]] = []
     top_rows: list[dict[str, object]] = []
 
     for key, group in prepared.partition_by(["method", "region"], as_dict=True, maintain_order=True).items():
         method, region = key if isinstance(key, tuple) else (None, None)
+        logger.info("Computing metrics for %s %s (%d rows)", method, region, group.height)
         clean = group.filter(pl.col("entropy_rank_score").is_not_null() & pl.col("pip").is_not_null())
         if clean.is_empty():
+            logger.info("Skipping %s %s because no rows have both entropy and PIP", method, region)
             continue
 
         entropy = clean.get_column("entropy_rank_score").to_numpy()
@@ -62,6 +67,7 @@ def compute_benchmark_tables(
             for row in _top_rank_rows(clean, threshold, top_k, top_fractions):
                 top_rows.append({"method": method, "region": region, "pip_threshold": threshold} | row)
 
+    logger.info("Computed %d region metric rows and %d top-rank metric rows", len(summary_rows), len(top_rows))
     return {
         "region_metrics": pl.DataFrame(summary_rows) if summary_rows else pl.DataFrame(),
         "top_rank_metrics": pl.DataFrame(top_rows) if top_rows else pl.DataFrame(),
@@ -72,6 +78,7 @@ def summarize_global(region_metrics: pl.DataFrame) -> pl.DataFrame:
     """Average per-region metrics by method and PIP threshold."""
 
     if region_metrics.is_empty():
+        logger.warning("No region metrics available for global summary")
         return region_metrics
 
     metric_columns = [
@@ -82,6 +89,7 @@ def summarize_global(region_metrics: pl.DataFrame) -> pl.DataFrame:
         "auroc_gwas",
         "auprc_gwas",
     ]
+    logger.info("Summarizing global metrics from %d region rows", region_metrics.height)
     return (
         region_metrics.group_by(["method", "pip_threshold"])
         .agg(

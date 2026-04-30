@@ -44,13 +44,13 @@ If package resolution is unavailable, the dependency declarations are already in
 Inspect entropy coverage and schema:
 
 ```bash
-uv run gpn-finemap inspect-entropy --entropy-dir entropy
+uv run gpn-finemap inspect-entropy --entropy-dir entropy --verbose
 ```
 
 Download/cache FinnGen files:
 
 ```bash
-uv run gpn-finemap download-finngen --release 12 --endpoint T2D --cache-dir data
+uv run gpn-finemap download-finngen --release 12 --endpoint T2D --cache-dir data --verbose
 ```
 
 Run the benchmark using downloaded or cached files:
@@ -61,7 +61,8 @@ uv run gpn-finemap run \
   --endpoint T2D \
   --entropy-dir entropy \
   --cache-dir data \
-  --output-dir results/t2d_entropy
+  --output-dir results/t2d_entropy \
+  --verbose
 ```
 
 If FinnGen fine-mapping files are not found by the built-in public URL
@@ -73,7 +74,8 @@ uv run gpn-finemap run \
   --summary-path data/T2D.gz \
   --susie-snp-path data/T2D.SUSIE.snp.bgz \
   --finemap-snp-path data/T2D.FINEMAP.snp.bgz \
-  --output-dir results/t2d_entropy
+  --output-dir results/t2d_entropy \
+  --verbose
 ```
 
 By default, lower `entropy_calibrated` is treated as more constrained. To test
@@ -82,6 +84,9 @@ the opposite direction:
 ```bash
 uv run gpn-finemap run --constrained-direction high
 ```
+
+All CLI commands support `--verbose`/`-v` to print progress logs for downloads,
+parquet scans, chromosome joins, metric computation, and output writing.
 
 ## Metrics
 

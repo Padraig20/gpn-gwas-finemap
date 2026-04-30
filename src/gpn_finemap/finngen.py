@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 import shutil
 import urllib.error
 import urllib.request
@@ -14,6 +15,7 @@ import polars as pl
 
 DEFAULT_RELEASE = 12
 DEFAULT_ENDPOINTS = ("T2D", "E4_DM2")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -39,8 +41,10 @@ def download_file(url: str, destination: Path, overwrite: bool = False) -> Path:
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists() and not overwrite:
+        logger.info("Using cached file: %s", destination)
         return destination
 
+    logger.info("Downloading %s -> %s", url, destination)
     request = urllib.request.Request(url, headers={"User-Agent": "gpn-finemap/0.1"})
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
@@ -48,9 +52,11 @@ def download_file(url: str, destination: Path, overwrite: bool = False) -> Path:
                 shutil.copyfileobj(response, handle)
                 temp_path = Path(handle.name)
     except urllib.error.URLError as exc:
+        logger.info("Download failed for %s: %s", url, exc)
         raise RuntimeError(f"Could not download {url}: {exc}") from exc
 
     temp_path.replace(destination)
+    logger.info("Downloaded %s", destination)
     return destination
 
 
@@ -70,6 +76,7 @@ def download_endpoint_files(
     public GCS paths and also supports explicit URL overrides.
     """
 
+    logger.info("Resolving FinnGen R%s files for endpoint %s", release, endpoint)
     endpoint_cache = cache_dir / f"finngen_R{release}" / endpoint
     summary = _download_summary_stats(endpoint_cache, release, endpoint, summary_url, overwrite)
     susie = _download_first_available(
@@ -83,6 +90,12 @@ def download_endpoint_files(
         [finemap_snp_url] if finemap_snp_url else fine_mapping_candidate_urls(release, endpoint, "FINEMAP", "snp"),
         overwrite=overwrite,
         required=False,
+    )
+    logger.info(
+        "FinnGen paths resolved: summary=%s susie=%s finemap=%s",
+        summary,
+        susie,
+        finemap,
     )
     return FinnGenPaths(endpoint=endpoint, summary_stats=summary, susie_snp=susie, finemap_snp=finemap)
 
@@ -107,6 +120,7 @@ def fine_mapping_candidate_urls(release: int, endpoint: str, method: str, suffix
 def scan_summary_stats(path: Path) -> pl.LazyFrame:
     """Scan FinnGen summary stats and standardize core columns."""
 
+    logger.info("Scanning FinnGen summary statistics: %s", path)
     return (
         pl.scan_csv(path, separator="\t", infer_schema_length=10_000, null_values=["NA", "nan"])
         .rename({"#chrom": "chrom"})
@@ -125,6 +139,7 @@ def scan_summary_stats(path: Path) -> pl.LazyFrame:
 def scan_finemap_snps(path: Path, method: str) -> pl.LazyFrame:
     """Scan a FinnGen SuSiE or FINEMAP SNP-level fine-mapping file."""
 
+    logger.info("Scanning FinnGen %s SNP fine-mapping file: %s", method.upper(), path)
     return (
         pl.scan_csv(path, separator="\t", infer_schema_length=10_000, null_values=["NA", "nan"])
         .rename({"chromosome": "chrom", "position": "pos", "allele1": "ref", "allele2": "alt"})
@@ -148,12 +163,15 @@ def _download_summary_stats(
 ) -> Path | None:
     destination = endpoint_cache / f"{endpoint}.gz"
     if explicit_url:
+        logger.info("Using explicit FinnGen summary-statistics URL")
         return download_file(explicit_url, destination, overwrite=overwrite)
 
     manifest_path = endpoint_cache.parent / "finngen_manifest.tsv"
+    logger.info("Resolving summary statistics through manifest: %s", manifest_path)
     download_file(summary_manifest_url(release), manifest_path, overwrite=overwrite)
     url = resolve_summary_url_from_manifest(manifest_path, endpoint)
     if url is None:
+        logger.warning("No summary-statistics URL found in manifest for endpoint %s", endpoint)
         return None
     return download_file(url, destination, overwrite=overwrite)
 
@@ -161,6 +179,7 @@ def _download_summary_stats(
 def resolve_summary_url_from_manifest(manifest_path: Path, endpoint: str) -> str | None:
     """Find the summary-statistic URL for an endpoint in a FinnGen manifest."""
 
+    logger.info("Searching manifest %s for endpoint %s", manifest_path, endpoint)
     endpoint = endpoint.upper()
     with manifest_path.open(newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
@@ -171,9 +190,12 @@ def resolve_summary_url_from_manifest(manifest_path: Path, endpoint: str) -> str
                 continue
             for value in values.values():
                 if value.startswith("http") and value.endswith(f"/{endpoint}.gz"):
+                    logger.info("Found summary-statistics URL for %s", endpoint)
                     return value
                 if value.startswith("http") and value.endswith(f"{endpoint}.gz"):
+                    logger.info("Found summary-statistics URL for %s", endpoint)
                     return value
+    logger.info("Manifest did not contain a summary-statistics URL for %s", endpoint)
     return None
 
 
@@ -188,11 +210,14 @@ def _download_first_available(
         if not url:
             continue
         try:
+            logger.info("Trying candidate URL for %s: %s", destination.name, url)
             return download_file(url, destination, overwrite=overwrite)
         except RuntimeError as exc:
+            logger.info("Candidate URL failed for %s: %s", destination.name, url)
             errors.append(str(exc))
 
     if required:
         message = "\n".join(errors[-3:])
         raise RuntimeError(f"None of the candidate URLs worked for {destination.name}:\n{message}")
+    logger.warning("No candidate URL worked for %s", destination.name)
     return None

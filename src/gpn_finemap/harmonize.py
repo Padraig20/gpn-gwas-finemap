@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import polars as pl
 
 from gpn_finemap.entropy import scan_entropy_chrom
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -33,24 +36,36 @@ def join_entropy_scores(
     """
 
     if chroms is None:
+        logger.info("Collecting chromosomes present in variant fine-mapping data")
         chroms = (
             variants.select(pl.col("chrom").cast(pl.Utf8).unique().sort())
             .collect()
             .get_column("chrom")
             .to_list()
         )
+    logger.info("Joining entropy scores for chromosomes: %s", ", ".join(map(str, chroms)))
 
     annotated: list[pl.DataFrame] = []
     for chrom in chroms:
+        logger.info("Joining chromosome %s to entropy scores", chrom)
         variants_chr = variants.filter(pl.col("chrom") == chrom)
         entropy_chr = scan_entropy_chrom(entropy_dir, chrom)
         joined = variants_chr.join(entropy_chr, on=["chrom", "pos", "ref"], how="left").collect()
+        logger.info(
+            "Chromosome %s joined rows=%d entropy_matches=%d",
+            chrom,
+            joined.height,
+            joined.filter(pl.col("entropy_calibrated").is_not_null()).height,
+        )
         if joined.height:
             annotated.append(joined)
 
     if not annotated:
+        logger.warning("No rows were annotated with entropy scores")
         return variants.collect().with_columns(pl.lit(None, dtype=pl.Float64).alias("entropy_calibrated"))
-    return pl.concat(annotated, how="vertical_relaxed")
+    result = pl.concat(annotated, how="vertical_relaxed")
+    logger.info("Finished entropy join with %d total rows", result.height)
+    return result
 
 
 def harmonization_diagnostics(frame: pl.DataFrame) -> HarmonizationDiagnostics:
@@ -59,6 +74,7 @@ def harmonization_diagnostics(frame: pl.DataFrame) -> HarmonizationDiagnostics:
     rows = frame.height
     matched = frame.filter(pl.col("entropy_calibrated").is_not_null()).height
     unmatched = rows - matched
+    logger.info("Entropy harmonization match rate: %d/%d rows (%.2f%%)", matched, rows, matched / rows * 100 if rows else 0)
     return HarmonizationDiagnostics(
         rows=rows,
         matched_rows=matched,

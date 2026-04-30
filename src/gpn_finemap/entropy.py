@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import polars as pl
 
 EXPECTED_COLUMNS = ("chrom", "pos", "ref", "entropy_calibrated")
 CHROMOSOMES = tuple(str(chrom) for chrom in range(1, 23)) + ("X", "Y")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,7 @@ def scan_entropy_chrom(entropy_dir: Path, chrom: str | int) -> pl.LazyFrame:
     if not path.exists():
         raise FileNotFoundError(f"Missing entropy parquet for chromosome {chrom}: {path}")
 
+    logger.info("Scanning entropy parquet for chromosome %s: %s", normalize_chrom(chrom), path)
     return (
         pl.scan_parquet(path)
         .select(EXPECTED_COLUMNS)
@@ -80,8 +83,10 @@ def inspect_entropy_files(entropy_dir: Path) -> list[EntropyFileInfo]:
     if not entropy_dir.exists():
         raise FileNotFoundError(f"Entropy directory does not exist: {entropy_dir}")
 
+    logger.info("Inspecting entropy directory: %s", entropy_dir)
     infos: list[EntropyFileInfo] = []
     for path in list_entropy_files(entropy_dir):
+        logger.info("Reading parquet metadata: %s", path)
         schema = pl.scan_parquet(path).collect_schema()
         chrom = path.stem.removeprefix("entropy_chr")
         rows = _parquet_row_count(path)
@@ -100,6 +105,7 @@ def inspect_entropy_files(entropy_dir: Path) -> list[EntropyFileInfo]:
 def validate_entropy_files(entropy_dir: Path) -> list[str]:
     """Return human-readable validation problems for the entropy dataset."""
 
+    logger.info("Validating entropy files in %s", entropy_dir)
     problems: list[str] = []
     infos = inspect_entropy_files(entropy_dir)
     found = {info.chrom for info in infos}
@@ -110,6 +116,10 @@ def validate_entropy_files(entropy_dir: Path) -> list[str]:
     for info in infos:
         for column in info.missing_columns:
             problems.append(f"{info.path.name} is missing column {column!r}")
+    if problems:
+        logger.warning("Entropy validation found %d problem(s)", len(problems))
+    else:
+        logger.info("Entropy validation passed for %d file(s)", len(infos))
     return problems
 
 

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import polars as pl
 
 from gpn_finemap.harmonize import HarmonizationDiagnostics
+
+logger = logging.getLogger(__name__)
 
 
 def write_benchmark_outputs(
@@ -22,19 +25,24 @@ def write_benchmark_outputs(
     """Write parquet/TSV outputs, plots, and a markdown summary."""
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Writing annotated variants to %s", output_dir / "annotated_finemap_variants.parquet")
     annotated_variants.write_parquet(output_dir / "annotated_finemap_variants.parquet")
 
     for name, table in tables.items():
         if table.is_empty():
+            logger.info("Skipping empty output table: %s", name)
             continue
+        logger.info("Writing %s table with %d rows", name, table.height)
         table.write_csv(output_dir / f"{name}.tsv", separator="\t")
         table.write_parquet(output_dir / f"{name}.parquet")
 
     if not global_summary.is_empty():
+        logger.info("Writing global summary with %d rows", global_summary.height)
         global_summary.write_csv(output_dir / "global_summary.tsv", separator="\t")
         global_summary.write_parquet(output_dir / "global_summary.parquet")
         write_metric_plot(global_summary, output_dir / "global_auprc.png")
 
+    logger.info("Writing markdown report to %s", output_dir / "report.md")
     (output_dir / "report.md").write_text(
         render_report(
             endpoint=endpoint,
@@ -107,6 +115,7 @@ def write_metric_plot(global_summary: pl.DataFrame, path: Path) -> None:
 
     import matplotlib.pyplot as plt
 
+    logger.info("Writing metric plot to %s", path)
     plot_frame = global_summary.select(
         "method",
         "pip_threshold",
