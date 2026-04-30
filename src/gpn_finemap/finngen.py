@@ -80,13 +80,13 @@ def download_endpoint_files(
     endpoint_cache = cache_dir / f"finngen_R{release}" / endpoint
     summary = _download_summary_stats(endpoint_cache, release, endpoint, summary_url, overwrite)
     susie = _download_first_available(
-        endpoint_cache / f"{endpoint}.SUSIE.snp.bgz",
+        endpoint_cache / f"finngen_R{release}_{endpoint}.SUSIE.snp.bgz",
         [susie_snp_url] if susie_snp_url else fine_mapping_candidate_urls(release, endpoint, "SUSIE", "snp"),
         overwrite=overwrite,
         required=False,
     )
     finemap = _download_first_available(
-        endpoint_cache / f"{endpoint}.FINEMAP.snp.bgz",
+        endpoint_cache / f"finngen_R{release}_{endpoint}.FINEMAP.snp.bgz",
         [finemap_snp_url] if finemap_snp_url else fine_mapping_candidate_urls(release, endpoint, "FINEMAP", "snp"),
         overwrite=overwrite,
         required=False,
@@ -105,9 +105,11 @@ def fine_mapping_candidate_urls(release: int, endpoint: str, method: str, suffix
 
     base = release_base_url(release)
     method_lower = method.lower()
+    method_dir = "susie" if method.upper() == "SUSIE" else "finemap"
     filename = f"{endpoint}.{method}.{suffix}.bgz"
     release_filename = f"finngen_R{release}_{filename}"
     return [
+        f"{base}/finemap/full/{method_dir}/{release_filename}",
         f"{base}/finemapping/{filename}",
         f"{base}/finemapping/{release_filename}",
         f"{base}/finemapping/{method_lower}/{filename}",
@@ -161,7 +163,7 @@ def _download_summary_stats(
     explicit_url: str | None,
     overwrite: bool,
 ) -> Path | None:
-    destination = endpoint_cache / f"{endpoint}.gz"
+    destination = endpoint_cache / f"finngen_R{release}_{endpoint}.gz"
     if explicit_url:
         logger.info("Using explicit FinnGen summary-statistics URL")
         return download_file(explicit_url, destination, overwrite=overwrite)
@@ -185,6 +187,11 @@ def resolve_summary_url_from_manifest(manifest_path: Path, endpoint: str) -> str
         reader = csv.DictReader(handle, delimiter="\t")
         for row in reader:
             values = {key: (value or "") for key, value in row.items()}
+            if values.get("phenocode", "").upper() == endpoint:
+                url = values.get("path_https")
+                if url:
+                    logger.info("Found summary-statistics URL for %s in path_https", endpoint)
+                    return url
             haystack = "\t".join(values.values()).upper()
             if f"/{endpoint}.GZ" not in haystack and f"\t{endpoint}\t" not in f"\t{haystack}\t":
                 continue

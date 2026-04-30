@@ -25,10 +25,11 @@ Expected entropy parquet columns:
 - `ref`
 - `entropy_calibrated`
 
-FinnGen files can be downloaded from public release manifests where available,
-or passed explicitly as local paths/URLs. The default endpoint is `T2D`; use
-`E4_DM2` if a chosen FinnGen release does not expose the core T2D fine-mapping
-files.
+FinnGen R12 summary statistics are resolved from the public manifest under
+`summary_stats/release/`. Fine-mapping SNP files are downloaded from
+`finemap/full/susie/` and `finemap/full/finemap/`. The default endpoint is
+`T2D`; use `E4_DM2` if a chosen FinnGen release does not expose the core T2D
+fine-mapping files.
 
 ## Setup
 
@@ -71,9 +72,9 @@ candidates, pass explicit inputs:
 ```bash
 uv run gpn-finemap run \
   --entropy-dir entropy \
-  --summary-path data/T2D.gz \
-  --susie-snp-path data/T2D.SUSIE.snp.bgz \
-  --finemap-snp-path data/T2D.FINEMAP.snp.bgz \
+  --summary-path data/finngen_R12/T2D/finngen_R12_T2D.gz \
+  --susie-snp-path data/finngen_R12/T2D/finngen_R12_T2D.SUSIE.snp.bgz \
+  --finemap-snp-path data/finngen_R12/T2D/finngen_R12_T2D.FINEMAP.snp.bgz \
   --output-dir results/t2d_entropy \
   --verbose
 ```
