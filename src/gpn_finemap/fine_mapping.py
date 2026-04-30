@@ -268,7 +268,15 @@ def _run_ldstore(ldstore_exe: str, bcor: Path, start: int, end: int, table_path:
         str(table_path),
     ]
     logger.info("Running LDstore: %s", " ".join(command))
-    subprocess.run(command, check=True)
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout).strip()
+        if "Cannot recognize flag '--bcor'" in message or "LDstore v2" in message:
+            raise RuntimeError(
+                "LDstore rejected the v1.1 BCOR extraction flags used for FinnGen public LD files. "
+                "Use LDstore v1.1 with --ld-bcor-dir, or provide precomputed matrices via --ld-matrix-dir."
+            ) from subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+        raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
 
 
 def _ldstore_table_to_matrix(table_path: Path, variants: pl.DataFrame, output_path: Path) -> None:
@@ -423,8 +431,30 @@ def check_fine_mapping_tools(config: FineMappingRunConfig) -> list[str]:
     missing: list[str] = []
     if config.ld_bcor_dir and shutil.which(config.ldstore_exe) is None:
         missing.append(config.ldstore_exe)
+    elif config.ld_bcor_dir:
+        ldstore_problem = _ldstore_cli_problem(config.ldstore_exe)
+        if ldstore_problem:
+            missing.append(ldstore_problem)
     if config.run_susie and shutil.which(config.rscript_exe) is None:
         missing.append(config.rscript_exe)
     if config.run_finemap and shutil.which(config.finemap_exe) is None:
         missing.append(config.finemap_exe)
     return missing
+
+
+def _ldstore_cli_problem(ldstore_exe: str) -> str | None:
+    try:
+        result = subprocess.run(
+            [ldstore_exe, "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+    help_text = f"{result.stdout}\n{result.stderr}"
+    if "LDstore v2" in help_text or "--bcor-to-text" in help_text:
+        return f"{ldstore_exe} (LDstore v2 detected; use LDstore v1.1 with --ld-bcor-dir)"
+    return None

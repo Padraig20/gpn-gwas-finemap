@@ -125,7 +125,9 @@ uv run gpn-finemap run-fine-mapping \
 Requirements for the end-to-end runner:
 
 - `LDstore v1.1` to extract LD tables from FinnGen/SISu `FG_LD_chr*.bcor`
-  files.
+  files. `LDstore v2.0` has a different CLI (`--bcor-to-text`,
+  `--bcor-file`, `--ld-file`, `--range`) and will reject the v1.1
+  `--bcor` flag used by this runner.
 - `Rscript` with the R package `susieR` installed.
 - `FINEMAP v1.4` or compatible executable.
 - Enough disk space for FinnGen public LD BCOR files. They are several GB per

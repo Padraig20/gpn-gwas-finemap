@@ -277,7 +277,7 @@ def run_fine_mapping_command(
     )
     missing = check_fine_mapping_tools(config)
     if missing:
-        message = "Missing required external tool(s): " + ", ".join(missing)
+        message = "External tool problem(s): " + ", ".join(missing)
         if check_tools_only:
             typer.echo(message)
             raise typer.Exit(1)
