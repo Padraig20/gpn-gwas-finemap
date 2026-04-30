@@ -239,6 +239,11 @@ def run_fine_mapping_command(
     max_regions: int | None = typer.Option(None, help="Limit number of regions, useful for smoke tests."),
     max_variants: int = typer.Option(5000, help="Skip/trim very large regions to this many variants."),
     run_susie: bool = typer.Option(True, help="Run SuSiE jobs."),
+    susie_check_prior: bool = typer.Option(
+        True,
+        "--susie-check-prior/--no-susie-check-prior",
+        help="Let SuSiE stop on large estimated prior variances, which usually indicate z/LD mismatch.",
+    ),
     run_finemap: bool = typer.Option(True, help="Run FINEMAP jobs."),
     allow_identity_ld: bool = typer.Option(False, help="Use identity LD when no LD source is provided; smoke tests only."),
     download_ld_bcor: bool = typer.Option(
@@ -271,6 +276,7 @@ def run_fine_mapping_command(
         max_regions=max_regions,
         max_variants=max_variants,
         run_susie=run_susie,
+        susie_check_prior=susie_check_prior,
         run_finemap=run_finemap,
         allow_identity_ld=allow_identity_ld,
         download_ld_bcor=download_ld_bcor,

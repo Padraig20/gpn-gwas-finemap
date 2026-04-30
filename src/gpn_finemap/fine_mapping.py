@@ -39,6 +39,7 @@ class FineMappingRunConfig:
     max_regions: int | None = None
     max_variants: int = 5000
     run_susie: bool = True
+    susie_check_prior: bool = True
     run_finemap: bool = True
     allow_identity_ld: bool = False
     download_ld_bcor: bool = False
@@ -360,9 +361,19 @@ def _run_susie(config: FineMappingRunConfig, inputs: dict[str, Path], ld_path: P
         str(out_prefix),
         str(config.max_causal),
         str(config.n_samples),
+        "TRUE" if config.susie_check_prior else "FALSE",
     ]
     logger.info("Running SuSiE: %s", " ".join(command))
-    subprocess.run(command, check=True)
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        message = f"{result.stdout}\n{result.stderr}".strip()
+        if "estimated prior variance is unreasonably large" in message:
+            raise RuntimeError(
+                "SuSiE rejected this locus because the z-scores and LD matrix appear mismatched. "
+                "Use better matched LD through --ld-matrix-dir, disable SuSiE with --run-susie false, "
+                "or rerun with --no-susie-check-prior if you intentionally want to bypass this SuSiE check."
+            ) from subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+        raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
 
 
 def _run_finemap(config: FineMappingRunConfig, inputs: dict[str, Path], ld_path: Path, out_dir: Path) -> None:
@@ -395,6 +406,7 @@ ld_path <- args[[2]]
 out_prefix <- args[[3]]
 L <- as.integer(args[[4]])
 n <- if (length(args) >= 5) as.integer(args[[5]]) else NA_integer_
+check_prior <- if (length(args) >= 6) as.logical(args[[6]]) else TRUE
 
 suppressPackageStartupMessages(library(susieR))
 
@@ -419,7 +431,8 @@ fit_args <- list(
   z = z$z,
   R = R,
   prior_weights = z$susie_prior_weight,
-  L = L
+  L = L,
+  check_prior = check_prior
 )
 if (!is.na(n) && n > 0) {
   fit_args$n <- n

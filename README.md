@@ -138,6 +138,12 @@ fine-mapping because in-sample LD is better. Use this runner for a reproducible
 public benchmark, and swap in better matched LD through `--ld-matrix-dir` when
 available.
 
+SuSiE can reject loci with `The estimated prior variance is unreasonably large`
+when the summary-statistic z-scores and LD matrix are inconsistent. Prefer
+matched LD via `--ld-matrix-dir`; for exploratory public-LD runs, either skip
+SuSiE with `--run-susie false` or intentionally bypass this SuSiE safety check
+with `--no-susie-check-prior`.
+
 If you already have per-region FINEMAP/SuSiE LD matrices in the same variant
 order as the generated region inputs, use `--ld-matrix-dir` instead of
 `--ld-bcor-dir`. For a smoke test only, `--allow-identity-ld --run-susie false
