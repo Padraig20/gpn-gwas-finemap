@@ -172,17 +172,25 @@ def prepare_priors(
         Path("results/t2d_entropy/annotated_finemap_variants.parquet"),
         help="Annotated variant parquet produced by `gpn-finemap run`.",
     ),
+    entropy_dir: Path = typer.Option(
+        Path("entropy"),
+        help="Directory with entropy_chr*.parquet files, required for --prior-method surprise.",
+    ),
     output_dir: Path = typer.Option(Path("results/t2d_entropy_priors"), help="Output directory for prior files."),
     constrained_direction: str = typer.Option(
         "low",
         help="Whether lower or higher entropy_calibrated means stronger constraint: low|high.",
     ),
     prior_method: str = typer.Option(
-        "softmax",
-        help="Entropy-to-prior transform: softmax|rank|minmax.",
+        "surprise",
+        help="Entropy-to-prior transform: surprise|softmax|rank|minmax.",
     ),
     temperature: float = typer.Option(1.0, help="Softmax temperature; lower is more concentrated."),
     prior_floor: float = typer.Option(1e-6, help="Small nonzero mass added before normalization."),
+    surprise_gamma: float = typer.Option(0.25, help="Log-linear enrichment coefficient for surprise priors."),
+    surprise_u_epsilon: float = typer.Option(1e-12, help="Lower bound for ECDF tail probabilities."),
+    prior_weight_min: float | None = typer.Option(0.05, help="Minimum capped enrichment weight."),
+    prior_weight_max: float | None = typer.Option(20.0, help="Maximum capped enrichment weight."),
     missing_policy: str = typer.Option(
         "median",
         help="How to fill missing entropy scores: median|uniform|least_constrained.",
@@ -207,6 +215,11 @@ def prepare_priors(
         prior_floor=prior_floor,
         missing_policy=missing_policy,
         finemap_expected_causal_per_region=finemap_expected_causal_per_region,
+        entropy_dir=entropy_dir,
+        surprise_gamma=surprise_gamma,
+        surprise_u_epsilon=surprise_u_epsilon,
+        prior_weight_min=prior_weight_min,
+        prior_weight_max=prior_weight_max,
     )
     write_prior_outputs(priors, output_dir, include_templates=templates)
     typer.echo(f"Wrote entropy prior files to {output_dir}")
@@ -218,6 +231,10 @@ def run_fine_mapping_command(
         Path("results/t2d_entropy/annotated_finemap_variants.parquet"),
         help="Annotated variant parquet produced by `gpn-finemap run`.",
     ),
+    entropy_dir: Path = typer.Option(
+        Path("entropy"),
+        help="Directory with entropy_chr*.parquet files, required for --prior-method surprise.",
+    ),
     output_dir: Path = typer.Option(Path("results/t2d_entropy_finemap"), help="Output directory for fine-mapping runs."),
     ld_bcor_dir: Path | None = typer.Option(None, help="Directory containing FinnGen/SISu `FG_LD_chr*.bcor` files."),
     ld_matrix_dir: Path | None = typer.Option(None, help="Directory with precomputed per-region `.ld` matrices."),
@@ -226,9 +243,13 @@ def run_fine_mapping_command(
     finemap_exe: str = typer.Option("finemap", help="Path/name of FINEMAP executable."),
     source_method: str = typer.Option("SUSIE", help="Rows to use from annotated variants: SUSIE or FINEMAP."),
     constrained_direction: str = typer.Option("low", help="Whether lower or higher entropy means stronger constraint: low|high."),
-    prior_method: str = typer.Option("softmax", help="Entropy-to-prior transform: softmax|rank|minmax."),
+    prior_method: str = typer.Option("surprise", help="Entropy-to-prior transform: surprise|softmax|rank|minmax."),
     temperature: float = typer.Option(1.0, help="Softmax temperature; lower is more concentrated."),
     prior_floor: float = typer.Option(1e-6, help="Small nonzero mass added before normalization."),
+    surprise_gamma: float = typer.Option(0.25, help="Log-linear enrichment coefficient for surprise priors."),
+    surprise_u_epsilon: float = typer.Option(1e-12, help="Lower bound for ECDF tail probabilities."),
+    prior_weight_min: float | None = typer.Option(0.05, help="Minimum capped enrichment weight."),
+    prior_weight_max: float | None = typer.Option(20.0, help="Maximum capped enrichment weight."),
     missing_policy: str = typer.Option("median", help="How to fill missing entropy: median|uniform|least_constrained."),
     finemap_expected_causal_per_region: float = typer.Option(
         1.0,
@@ -258,6 +279,7 @@ def run_fine_mapping_command(
     configure_logging(verbose)
     config = FineMappingRunConfig(
         annotated_variants=annotated_variants,
+        entropy_dir=entropy_dir,
         output_dir=output_dir,
         ld_bcor_dir=ld_bcor_dir,
         ld_matrix_dir=ld_matrix_dir,
@@ -269,6 +291,10 @@ def run_fine_mapping_command(
         prior_method=prior_method,
         temperature=temperature,
         prior_floor=prior_floor,
+        surprise_gamma=surprise_gamma,
+        surprise_u_epsilon=surprise_u_epsilon,
+        prior_weight_min=prior_weight_min,
+        prior_weight_max=prior_weight_max,
         missing_policy=missing_policy,
         finemap_expected_causal_per_region=finemap_expected_causal_per_region,
         max_causal=max_causal,

@@ -10,9 +10,11 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+from gpn_finemap.entropy import list_entropy_files
+
 logger = logging.getLogger(__name__)
 
-PRIOR_METHODS = ("softmax", "rank", "minmax")
+PRIOR_METHODS = ("softmax", "rank", "minmax", "surprise")
 MISSING_POLICIES = ("median", "uniform", "least_constrained")
 
 
@@ -25,6 +27,11 @@ def add_entropy_prior_columns(
     prior_floor: float = 1e-6,
     missing_policy: str = "median",
     finemap_expected_causal_per_region: float = 1.0,
+    entropy_dir: Path | None = None,
+    surprise_gamma: float = 0.25,
+    surprise_u_epsilon: float = 1e-12,
+    prior_weight_min: float | None = 0.05,
+    prior_weight_max: float | None = 20.0,
 ) -> pl.DataFrame:
     """Add SuSiE and FINEMAP prior columns derived from entropy.
 
@@ -34,13 +41,35 @@ def add_entropy_prior_columns(
     requested expected number of causal variants per region.
     """
 
-    _validate_options(constrained_direction, prior_method, temperature, prior_floor, missing_policy)
+    _validate_options(
+        constrained_direction,
+        prior_method,
+        temperature,
+        prior_floor,
+        missing_policy,
+        entropy_dir,
+        surprise_gamma,
+        surprise_u_epsilon,
+        prior_weight_min,
+        prior_weight_max,
+    )
     if finemap_expected_causal_per_region <= 0:
         raise ValueError("finemap_expected_causal_per_region must be > 0")
 
     id_frame = _with_variant_id(frame)
     if "region" not in id_frame.columns:
         raise ValueError("Input must contain a 'region' column")
+    if prior_method == "surprise":
+        id_frame = _add_surprise_columns(
+            id_frame,
+            entropy_dir=entropy_dir,
+            constrained_direction=constrained_direction,
+            missing_policy=missing_policy,
+            surprise_gamma=surprise_gamma,
+            surprise_u_epsilon=surprise_u_epsilon,
+            prior_weight_min=prior_weight_min,
+            prior_weight_max=prior_weight_max,
+        )
 
     logger.info("Adding entropy-derived prior columns for %d rows", id_frame.height)
     chunks: list[pl.DataFrame] = []
@@ -120,8 +149,12 @@ def _add_group_priors(
     finemap_expected_causal_per_region: float,
 ) -> pl.DataFrame:
     entropy = group.get_column("entropy_calibrated").to_numpy().astype(float)
-    scores = _entropy_to_scores(entropy, constrained_direction, missing_policy)
-    raw = _scores_to_positive_weights(scores, prior_method, temperature)
+    if prior_method == "surprise":
+        scores = group.get_column("entropy_surprise").to_numpy().astype(float)
+        raw = group.get_column("entropy_prior_enrichment").to_numpy().astype(float)
+    else:
+        scores = _entropy_to_scores(entropy, constrained_direction, missing_policy)
+        raw = _scores_to_positive_weights(scores, prior_method, temperature)
     raw = raw + prior_floor
     raw_sum = float(raw.sum())
     if not math.isfinite(raw_sum) or raw_sum <= 0:
@@ -132,6 +165,7 @@ def _add_group_priors(
     finemap_prob = np.minimum(susie_weights * finemap_expected_causal_per_region, 1.0 - 1e-12)
     return group.with_columns(
         pl.Series("entropy_prior_score", scores),
+        pl.Series("entropy_prior_enrichment", raw),
         pl.Series("susie_prior_weight", susie_weights),
         pl.Series("finemap_prior_probability", finemap_prob),
         pl.Series("SNPVAR", finemap_prob),
@@ -172,6 +206,116 @@ def _scores_to_positive_weights(scores: np.ndarray, prior_method: str, temperatu
     if score_max == score_min:
         return np.ones_like(scores, dtype=float)
     return (scores - score_min) / (score_max - score_min)
+
+
+def _add_surprise_columns(
+    frame: pl.DataFrame,
+    *,
+    entropy_dir: Path | None,
+    constrained_direction: str,
+    missing_policy: str,
+    surprise_gamma: float,
+    surprise_u_epsilon: float,
+    prior_weight_min: float | None,
+    prior_weight_max: float | None,
+) -> pl.DataFrame:
+    if entropy_dir is None:
+        raise ValueError("entropy_dir is required when prior_method='surprise'")
+
+    entropy = frame.get_column("entropy_calibrated").to_numpy().astype(float)
+    finite = np.isfinite(entropy)
+    background = _compute_background_tail_probabilities(
+        entropy[finite],
+        entropy_dir,
+        constrained_direction=constrained_direction,
+        u_epsilon=surprise_u_epsilon,
+    )
+    surprise = np.zeros_like(entropy, dtype=float)
+    if finite.any():
+        surprise[finite] = background["surprise"]
+
+    missing_surprise = _missing_surprise_value(
+        background,
+        missing_policy=missing_policy,
+        constrained_direction=constrained_direction,
+    )
+    surprise[~finite] = missing_surprise
+
+    enrichment = np.exp(np.clip(surprise_gamma * surprise, -700, 700))
+    if prior_weight_min is not None or prior_weight_max is not None:
+        enrichment = np.clip(
+            enrichment,
+            prior_weight_min if prior_weight_min is not None else -np.inf,
+            prior_weight_max if prior_weight_max is not None else np.inf,
+        )
+    return frame.with_columns(
+        pl.Series("entropy_surprise", surprise),
+        pl.Series("entropy_prior_enrichment", enrichment),
+    )
+
+
+def _compute_background_tail_probabilities(
+    values: np.ndarray,
+    entropy_dir: Path,
+    *,
+    constrained_direction: str,
+    u_epsilon: float,
+) -> dict[str, np.ndarray | float]:
+    finite_values = values[np.isfinite(values)]
+    if finite_values.size == 0:
+        raise ValueError("No finite entropy_calibrated values are available for surprise priors")
+
+    unique_values, inverse = np.unique(finite_values, return_inverse=True)
+    tail_counts = np.zeros(unique_values.shape, dtype=np.int64)
+    total = 0
+
+    for path in list_entropy_files(entropy_dir):
+        entropy = (
+            pl.scan_parquet(path)
+            .select(pl.col("entropy_calibrated").cast(pl.Float64))
+            .filter(pl.col("entropy_calibrated").is_not_null() & pl.col("entropy_calibrated").is_finite())
+            .collect()
+            .get_column("entropy_calibrated")
+            .to_numpy()
+            .astype(float)
+        )
+        if entropy.size == 0:
+            continue
+
+        entropy.sort()
+        total += entropy.size
+        if constrained_direction == "low":
+            tail_counts += np.searchsorted(entropy, unique_values, side="right")
+        else:
+            tail_counts += entropy.size - np.searchsorted(entropy, unique_values, side="left")
+
+    if total == 0:
+        raise ValueError(f"No finite entropy_calibrated values found in {entropy_dir}")
+
+    u_unique = np.maximum(tail_counts.astype(float) / total, u_epsilon)
+    surprise_unique = -np.log10(u_unique)
+
+    return {
+        "surprise": surprise_unique[inverse],
+        "min_surprise": float(np.nanmin(surprise_unique)),
+        "median_surprise": float(-math.log10(max(0.5, u_epsilon))),
+        "least_constrained_surprise": 0.0,
+    }
+
+
+def _missing_surprise_value(
+    background: dict[str, np.ndarray | float],
+    *,
+    missing_policy: str,
+    constrained_direction: str,
+) -> float:
+    if missing_policy == "uniform":
+        return 0.0
+    if missing_policy == "median":
+        return float(background["median_surprise"])
+    if constrained_direction in {"low", "high"}:
+        return float(background["least_constrained_surprise"])
+    return float(background["min_surprise"])
 
 
 def _with_variant_id(frame: pl.DataFrame) -> pl.DataFrame:
@@ -255,6 +399,11 @@ def _validate_options(
     temperature: float,
     prior_floor: float,
     missing_policy: str,
+    entropy_dir: Path | None,
+    surprise_gamma: float,
+    surprise_u_epsilon: float,
+    prior_weight_min: float | None,
+    prior_weight_max: float | None,
 ) -> None:
     if constrained_direction not in {"low", "high"}:
         raise ValueError("constrained_direction must be 'low' or 'high'")
@@ -266,3 +415,15 @@ def _validate_options(
         raise ValueError("temperature must be > 0")
     if prior_floor < 0:
         raise ValueError("prior_floor must be >= 0")
+    if prior_method == "surprise" and entropy_dir is None:
+        raise ValueError("entropy_dir is required when prior_method='surprise'")
+    if surprise_gamma < 0:
+        raise ValueError("surprise_gamma must be >= 0")
+    if not 0 < surprise_u_epsilon <= 1:
+        raise ValueError("surprise_u_epsilon must be in (0, 1]")
+    if prior_weight_min is not None and prior_weight_min < 0:
+        raise ValueError("prior_weight_min must be >= 0")
+    if prior_weight_max is not None and prior_weight_max <= 0:
+        raise ValueError("prior_weight_max must be > 0")
+    if prior_weight_min is not None and prior_weight_max is not None and prior_weight_min > prior_weight_max:
+        raise ValueError("prior_weight_min must be <= prior_weight_max")

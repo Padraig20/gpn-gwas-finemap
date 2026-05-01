@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 class FineMappingRunConfig:
     annotated_variants: Path
     output_dir: Path
+    entropy_dir: Path | None = None
     ld_bcor_dir: Path | None = None
     ld_matrix_dir: Path | None = None
     ldstore_exe: str = "ldstore"
@@ -32,6 +33,10 @@ class FineMappingRunConfig:
     prior_method: str = "softmax"
     temperature: float = 1.0
     prior_floor: float = 1e-6
+    surprise_gamma: float = 0.25
+    surprise_u_epsilon: float = 1e-12
+    prior_weight_min: float | None = 0.05
+    prior_weight_max: float | None = 20.0
     missing_policy: str = "median"
     finemap_expected_causal_per_region: float = 1.0
     max_causal: int = 10
@@ -57,6 +62,11 @@ def run_fine_mapping(config: FineMappingRunConfig) -> pl.DataFrame:
         prior_method=config.prior_method,
         temperature=config.temperature,
         prior_floor=config.prior_floor,
+        entropy_dir=config.entropy_dir,
+        surprise_gamma=config.surprise_gamma,
+        surprise_u_epsilon=config.surprise_u_epsilon,
+        prior_weight_min=config.prior_weight_min,
+        prior_weight_max=config.prior_weight_max,
         missing_policy=config.missing_policy,
         finemap_expected_causal_per_region=config.finemap_expected_causal_per_region,
     )

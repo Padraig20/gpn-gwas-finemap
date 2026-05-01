@@ -95,24 +95,35 @@ run:
 ```bash
 uv run gpn-finemap prepare-priors \
   --annotated-variants results/t2d_entropy/annotated_finemap_variants.parquet \
+  --entropy-dir entropy \
   --output-dir results/t2d_entropy_priors \
-  --prior-method softmax \
-  --temperature 1.0 \
+  --prior-method surprise \
+  --surprise-gamma 0.25 \
+  --prior-weight-max 20 \
   --finemap-expected-causal-per-region 1.0 \
   --verbose
 ```
 
-The prior command writes per-region SuSiE `prior_weights` files and FINEMAP
-`.z`-style files with an added `prob` column for `--prior-snps`. It also writes
-template run files showing where to plug in locus-specific LD matrices/master
-files.
+The recommended `surprise` prior uses the genome-wide entropy distribution, not
+a within-peak softmax. For low-entropy-is-conserved runs, it computes
+`u = P0(H <= Hj)`, `s = -log10(u)`, and a capped enrichment
+`w = exp(gamma * s)` before normalizing weights within each fine-mapping region.
+This keeps absolute conservation information, so a conserved SNP in a globally
+extreme tail receives a stronger prior than a merely local outlier. The prior
+command writes per-region SuSiE `prior_weights` files and FINEMAP `.z`-style
+files with an added `prob` column for `--prior-snps`. It also writes template run
+files showing where to plug in locus-specific LD matrices/master files.
 
 Run matched uniform-prior and entropy-prior SuSiE/FINEMAP jobs end-to-end:
 
 ```bash
 uv run gpn-finemap run-fine-mapping \
   --annotated-variants results/t2d_entropy/annotated_finemap_variants.parquet \
+  --entropy-dir entropy \
   --output-dir results/t2d_entropy_finemap \
+  --prior-method surprise \
+  --surprise-gamma 0.25 \
+  --prior-weight-max 20 \
   --ld-bcor-dir data/finngen_ld \
   --ldstore-exe /path/to/ldstore \
   --rscript-exe Rscript \
@@ -197,7 +208,8 @@ Each benchmark run writes:
 Prior preparation writes:
 
 - `entropy_priors.parquet` and `.tsv`: all annotated variants plus
-  `susie_prior_weight`, `finemap_prior_probability`, and `SNPVAR`.
+  `entropy_surprise`, `entropy_prior_enrichment`, `susie_prior_weight`,
+  `finemap_prior_probability`, and `SNPVAR`.
 - `susie/*.prior_weights.tsv`: two-column files for passing to
   `susie_rss(..., prior_weights = ...)`.
 - `finemap/*.prior.z`: FINEMAP-style `.z` files with an entropy-derived `prob`
@@ -230,7 +242,8 @@ Conservation enrichment writes:
 
 ## Future Extension
 
-The next benchmark should run matched uniform-prior and entropy-prior
-SuSiE/FINEMAP jobs with the same summary statistics, loci, and LD matrices, then
-compare PIP calibration, credible-set size, and recovery of FinnGen lead/high-PIP
-variants.
+The next prior model should replace the unmatched genome-wide background with a
+matched background when the necessary annotations are available, for example MAF
+bins, variant class, distance to TSS, CpG context, or mappability. The benchmark
+should then compare PIP calibration, credible-set size, and recovery of FinnGen
+lead/high-PIP variants across uniform and conservation-prior runs.
