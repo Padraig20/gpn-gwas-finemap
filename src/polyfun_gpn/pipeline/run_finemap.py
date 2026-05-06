@@ -28,7 +28,12 @@ from pathlib import Path
 
 import polars as pl
 
-from ..config import Config
+from ..config import (
+    Config,
+    resolve_plink_prefix,
+    resolve_project_path,
+    validate_finemap_ld,
+)
 from ..loci.demo import load_loci
 from ..loci.select import UKBBlock, snap_to_ukb_blocks
 
@@ -63,24 +68,42 @@ def _build_finemap_cmd(
     polyfun_dir = cfg.paths.absolute("polyfun_dir")
     finemap_exe = cfg.paths.absolute("finemap_exe")
     ld_cache = cfg.paths.absolute("ld_cache")
-    ld_prefix = cfg.finemap.ukb_ld_url_prefix.rstrip("/") + "/" + block.url_suffix
 
-    cmd = [
+    cmd: list[str] = [
         sys.executable,
         str(polyfun_dir / "finemapper.py"),
-        "--method", cfg.finemap.method,
-        "--finemap-exe", str(finemap_exe),
-        "--ld", ld_prefix,
-        "--sumstats", str(sumstats_path),
-        "--n", str(n_eff),
-        "--chr", str(chrom),
-        "--start", str(block.start),
-        "--end", str(block.end),
-        "--max-num-causal", str(cfg.finemap.max_num_causal),
-        "--memory", str(cfg.finemap.memory_gb),
-        "--threads", str(cfg.finemap.threads),
-        "--cache-dir", str(ld_cache),
-        "--out", str(out_path),
+        "--method",
+        cfg.finemap.method,
+        "--finemap-exe",
+        str(finemap_exe),
+    ]
+    if cfg.finemap.ld_mode == "plink":
+        cmd += ["--geno", str(resolve_plink_prefix(cfg))]
+    else:
+        ld_prefix = cfg.finemap.ld_npz_url_prefix.rstrip("/") + "/" + block.url_suffix
+        cmd += ["--ld", ld_prefix]
+
+    cmd += [
+        "--sumstats",
+        str(sumstats_path),
+        "--n",
+        str(n_eff),
+        "--chr",
+        str(chrom),
+        "--start",
+        str(block.start),
+        "--end",
+        str(block.end),
+        "--max-num-causal",
+        str(cfg.finemap.max_num_causal),
+        "--memory",
+        str(cfg.finemap.memory_gb),
+        "--threads",
+        str(cfg.finemap.threads),
+        "--cache-dir",
+        str(ld_cache),
+        "--out",
+        str(out_path),
         "--allow-missing",
     ]
     if prior_mode == "none":
@@ -105,6 +128,7 @@ def run_loci(cfg: Config, *, loci_path: Path, prior_mode: str) -> None:
             "FINEMAP binary missing; run `polyfun-gpn setup` to install it."
         )
     cfg.paths.absolute("ld_cache").mkdir(parents=True, exist_ok=True)
+    validate_finemap_ld(cfg)
 
     pairs = snap_to_ukb_blocks(load_loci(loci_path))
     py_exe, env = _polyfun_python_args(cfg)
@@ -189,6 +213,8 @@ def run_all(cfg: Config, *, prior_mode: str, chrom: str | None) -> None:
     if not finemap_exe.exists():
         raise RuntimeError("FINEMAP binary missing; run `polyfun-gpn setup`.")
 
+    validate_finemap_ld(cfg)
+
     gw_dir = cfg.paths.absolute("output_dir") / "genome_wide" / prior_mode
     gw_dir.mkdir(parents=True, exist_ok=True)
     sumstats_gw = _build_genome_wide_sumstats(cfg, prior_mode=prior_mode, dest_dir=gw_dir)
@@ -212,6 +238,11 @@ def run_all(cfg: Config, *, prior_mode: str, chrom: str | None) -> None:
     ]
     if chrom is not None:
         cmd += ["--chr", str(chrom)]
+    rf = cfg.finemap.ld_regions_file
+    if rf is not None:
+        cmd += ["--regions-file", str(resolve_project_path(cfg, Path(rf)))]
+    if cfg.finemap.ld_mode == "plink":
+        cmd += ["--geno", str(resolve_plink_prefix(cfg))]
 
     py_exe, env = _polyfun_python_args(cfg)
     _ = py_exe

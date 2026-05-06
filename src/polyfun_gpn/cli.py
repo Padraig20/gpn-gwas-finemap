@@ -18,7 +18,7 @@ from typing import Optional
 
 import typer
 
-from .config import load_config
+from .config import load_config, load_pipeline_config
 
 
 app = typer.Typer(
@@ -44,6 +44,58 @@ def _config_option() -> Path:
     )
 
 
+def _gwas_id_option() -> Optional[str]:
+    return typer.Option(
+        None,
+        "--gwas-id",
+        help=(
+            "Dataset slug (e.g. EUR, AFR, EAS). When set (not 'default'), "
+            "harmonised sumstats → data/gwas/{id}/, outputs → output/{id}/, "
+            "FINEMAP LD cache → data/ld_cache/{id}/. Omit for YAML-only paths."
+        ),
+    )
+
+
+def _gwas_raw_option() -> Optional[Path]:
+    return typer.Option(
+        None,
+        "--gwas-raw",
+        help="Path to raw GWAS TSV (same columns as the bundled EUR file).",
+    )
+
+
+def _ld_mode_option() -> Optional[str]:
+    return typer.Option(
+        None,
+        "--ld-mode",
+        help="precomputed_npz (download LD matrices) or plink (LD from --ld-plink genotypes).",
+    )
+
+
+def _ld_npz_prefix_option() -> Optional[str]:
+    return typer.Option(
+        None,
+        "--ld-npz-prefix",
+        help="Base URL for precomputed LD (--ld)...; YAML: finemap.ld_npz_url_prefix.",
+    )
+
+
+def _ld_plink_option() -> Optional[Path]:
+    return typer.Option(
+        None,
+        "--ld-plink",
+        help="Plink stem without .bed when --ld-mode plink.",
+    )
+
+
+def _ld_regions_file_option() -> Optional[Path]:
+    return typer.Option(
+        None,
+        "--ld-regions-file",
+        help="regions TSV/GZ like PolyFun ukb_regions (CHR,START,END,URL_PREFIX); used by run-all.",
+    )
+
+
 @app.command()
 def setup(
     config: Optional[Path] = _config_option(),
@@ -66,12 +118,14 @@ def setup(
 @app.command()
 def harmonize(
     config: Optional[Path] = _config_option(),
+    gwas_id: Optional[str] = _gwas_id_option(),
+    gwas_raw: Optional[Path] = _gwas_raw_option(),
     overwrite: bool = typer.Option(False, help="Recompute even if output exists."),
 ) -> None:
     """Stream GWAS TSV and emit a single Parquet with PolyFun columns."""
     from .gwas.io import harmonize_gwas
 
-    cfg = load_config(config)
+    cfg = load_pipeline_config(config, gwas_id=gwas_id, gwas_raw=gwas_raw)
     harmonize_gwas(cfg, overwrite=overwrite)
 
 
@@ -95,6 +149,8 @@ def build_bg(
 @app.command("prepare-loci")
 def prepare_loci(
     config: Optional[Path] = _config_option(),
+    gwas_id: Optional[str] = _gwas_id_option(),
+    gwas_raw: Optional[Path] = _gwas_raw_option(),
     loci: Path = typer.Option(
         Path("configs/loci_demo.tsv"),
         help="TSV with columns: locus_id chrom start end ...",
@@ -104,13 +160,19 @@ def prepare_loci(
     """For each locus, write per-locus PolyFun sumstats (with SNPVAR)."""
     from .pipeline.prepare_locus import prepare_loci as _prepare
 
-    cfg = load_config(config)
+    cfg = load_pipeline_config(config, gwas_id=gwas_id, gwas_raw=gwas_raw)
     _prepare(cfg, loci_path=loci, prior_mode=prior.value)
 
 
 @app.command()
 def run(
     config: Optional[Path] = _config_option(),
+    gwas_id: Optional[str] = _gwas_id_option(),
+    gwas_raw: Optional[Path] = _gwas_raw_option(),
+    ld_mode: Optional[str] = _ld_mode_option(),
+    ld_npz_url_prefix: Optional[str] = _ld_npz_prefix_option(),
+    ld_plink_prefix: Optional[Path] = _ld_plink_option(),
+    ld_regions_file: Optional[Path] = _ld_regions_file_option(),
     loci: Path = typer.Option(
         Path("configs/loci_demo.tsv"),
         help="TSV of loci to fine-map.",
@@ -124,7 +186,15 @@ def run(
     from .pipeline.prepare_locus import prepare_loci as _prepare
     from .pipeline.run_finemap import run_loci
 
-    cfg = load_config(config)
+    cfg = load_pipeline_config(
+        config,
+        gwas_id=gwas_id,
+        gwas_raw=gwas_raw,
+        ld_mode=ld_mode,
+        ld_npz_url_prefix=ld_npz_url_prefix,
+        ld_plink_prefix=ld_plink_prefix,
+        ld_regions_file=ld_regions_file,
+    )
     if not skip_prepare:
         _prepare(cfg, loci_path=loci, prior_mode=prior.value)
     run_loci(cfg, loci_path=loci, prior_mode=prior.value)
@@ -133,6 +203,12 @@ def run(
 @app.command("run-all")
 def run_all(
     config: Optional[Path] = _config_option(),
+    gwas_id: Optional[str] = _gwas_id_option(),
+    gwas_raw: Optional[Path] = _gwas_raw_option(),
+    ld_mode: Optional[str] = _ld_mode_option(),
+    ld_npz_url_prefix: Optional[str] = _ld_npz_prefix_option(),
+    ld_plink_prefix: Optional[Path] = _ld_plink_option(),
+    ld_regions_file: Optional[Path] = _ld_regions_file_option(),
     prior: PriorMode = typer.Option(PriorMode.entropy, help="Prior mode."),
     chrom: Optional[str] = typer.Option(None, help="Restrict to one chromosome."),
     pvalue: Optional[float] = typer.Option(
@@ -145,7 +221,15 @@ def run_all(
     """Genome-wide fine-mapping via PolyFun's create_finemapper_jobs.py."""
     from .pipeline.run_finemap import run_all as _run_all
 
-    cfg = load_config(config)
+    cfg = load_pipeline_config(
+        config,
+        gwas_id=gwas_id,
+        gwas_raw=gwas_raw,
+        ld_mode=ld_mode,
+        ld_npz_url_prefix=ld_npz_url_prefix,
+        ld_plink_prefix=ld_plink_prefix,
+        ld_regions_file=ld_regions_file,
+    )
     if pvalue is not None:
         cfg.finemap.pvalue_cutoff = pvalue
     if jobs is not None:
@@ -156,13 +240,15 @@ def run_all(
 @app.command()
 def aggregate(
     config: Optional[Path] = _config_option(),
+    gwas_id: Optional[str] = _gwas_id_option(),
+    gwas_raw: Optional[Path] = _gwas_raw_option(),
     prior: PriorMode = typer.Option(PriorMode.entropy, help="Prior mode."),
     chrom: Optional[str] = typer.Option(None, help="Restrict to one chromosome."),
 ) -> None:
     """Aggregate per-locus FINEMAP outputs into one TSV."""
     from .pipeline.aggregate import aggregate_results
 
-    cfg = load_config(config)
+    cfg = load_pipeline_config(config, gwas_id=gwas_id, gwas_raw=gwas_raw)
     aggregate_results(cfg, prior_mode=prior.value, chrom=chrom)
 
 

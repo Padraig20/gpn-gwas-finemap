@@ -32,6 +32,9 @@ def harmonize_gwas(cfg: Config, *, overwrite: bool = False) -> Path:
         raise FileNotFoundError(f"Raw GWAS TSV not found at {src}")
 
     dst.parent.mkdir(parents=True, exist_ok=True)
+    print(
+        f"[harmonize] gwas_dataset.id={cfg.gwas_dataset.id}  raw={src}  out={dst}"
+    )
     print(f"[harmonize] Streaming {src.name} -> {dst.name}")
 
     lf = (

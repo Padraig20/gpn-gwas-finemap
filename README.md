@@ -39,11 +39,11 @@ polyfun-gpn/
 │   ├── gwas/                 # provided: T2D EUR sumstats (hg19)
 │   ├── reference/            # filled by `setup`: liftover chain files
 │   ├── background/           # filled by `build-bg`: entropy_bg.npz
-│   └── ld_cache/             # populated on demand by FINEMAP
+│   └── ld_cache/             # FINEMAP --cache-dir; subdivided when using --gwas-id
 ├── external/
 │   ├── polyfun/              # cloned by `setup`
 │   └── bin/finemap           # FINEMAP v1.4.1 binary, fetched by `setup`
-├── output/
+├── output/                   # default layout; see "Multi-GWAS" for output/{id}/
 │   ├── loci/{prior}/{locus}/ # per-locus sumstats + FINEMAP outputs
 │   └── results/              # aggregated results
 ├── src/polyfun_gpn/          # the package
@@ -90,16 +90,87 @@ each command and run them with bounded concurrency (`--jobs`). Outputs land
 under `output/genome_wide/{prior}/`. Restrict to one chromosome with
 `--chrom`.
 
+## Multi-GWAS / multi-ancestry
+
+Each GWAS (e.g. by ancestry) should use its **own harmonised parquet** and
+**own output tree** so runs do not overwrite each other.
+
+**Option A — CLI convention** (no extra YAML file):
+
+```bash
+uv run polyfun-gpn harmonize --gwas-id AFR --gwas-raw /path/to/AFR_sumstats.txt
+uv run polyfun-gpn run --gwas-id AFR --loci configs/loci_demo.tsv --prior entropy
+uv run polyfun-gpn aggregate --gwas-id AFR --prior entropy
+```
+
+With `--gwas-id SLUG` (where `SLUG` is not `default`):
+
+- Raw path is unchanged unless you also pass `--gwas-raw PATH`.
+- Harmonised output: `data/gwas/{SLUG}/sumstats.hg19.parquet`
+- All pipeline outputs: `output/{SLUG}/` (e.g. `output/{SLUG}/loci/...`,
+  `output/{SLUG}/results/finemap.demo.entropy.tsv`)
+- FINEMAP LD disk cache (NPZ/`--cache-dir`): `data/ld_cache/{SLUG}/`
+
+**Option B — YAML per study** — set `paths.gwas_raw`, `paths.gwas_harmonised`,
+and `paths.output_dir` explicitly, or use `gwas_dataset.auto_paths: true` with
+`gwas_dataset.id: EUR` so harmonised + output paths follow the same convention
+without repeating them. See [configs/datasets/eur_t2d.yaml](configs/datasets/eur_t2d.yaml).
+
+Entropy background and liftover chains stay **shared** across ancestries
+(the same `data/background/` and `data/reference/`).
+
+### LD panel (configurable)
+
+FINEMAP needs an LD matrix. Two modes (`finemap.ld_mode`):
+
+1. **`precomputed_npz` (default)** — PolyFun downloads Broad-style matrices.
+   Use `finemap.ld_npz_url_prefix` as the HTTPS base ending in `UKBB_LD/`
+   (or any mirror exposing the **same `{chr}_{start}_{end}` block names**
+   PolyFun concatenates onto that prefix for `run`, and optionally per-row URLs
+   in `finemap.ld_regions_file` for genome-wide `run-all`). The legacy YAML
+   key **`ukb_ld_url_prefix`** is still accepted as an alias for the same URL.
+
+   The stock prefix is UK Biobank white-British (≈EUR). For another population
+   you only need NPZ tiling that matches GWAS **`builds.ld`** coordinate system;
+   if you host such a mirror, point `ld_npz_url_prefix` (or each row of
+   `ld_regions_file`) at it.
+
+2. **`plink`** — LD is computed from a **Plink genotype triplet** on disk
+   (ancestry-matched reference, e.g. 1000 Genomes). Set
+   `finemap.ld_plink_prefix` to the path **without** `.bed` (PolyFun
+   `--geno`). See [configs/datasets/afr_plink_template.yaml](configs/datasets/afr_plink_template.yaml).
+
+**CLI mirrors** (for `run` / `run-all`): `--ld-mode`, `--ld-npz-prefix`,
+`--ld-plink`, `--ld-regions-file`.
+
+Compare prior modes for a given slug:
+
+```bash
+uv run python scripts/compare_finemap_priormodes.py --gwas-id AFR
+# or
+uv run python scripts/compare_finemap_priormodes.py --results-dir output/AFR/results
+```
+
 ## Configuration
 
 Defaults live in `configs/default.yaml`. Notable knobs:
 
+- `gwas_dataset.id` / `gwas_dataset.auto_paths` — label and optional YAML-driven
+  `output/{id}` + `data/gwas/{id}/` layout (see Multi-GWAS above).
 - `prior.tau` — temperature on the surprise score (default 1.0).
 - `prior.epsilon` — density floor (avoids `log(0)`).
 - `background.n_samples` — random sample size for the background histogram
   (default 10 M; lower it for quick experimentation).
 - `finemap.max_num_causal` — passed to FINEMAP (default 5).
 - `finemap.max_concurrent_jobs` — parallelism for `run` and `run-all`.
+- `finemap.ld_mode` — `precomputed_npz` or `plink`.
+- `finemap.ld_npz_url_prefix` — base URL for NPZ `--ld`; legacy alias
+  `ukb_ld_url_prefix`.
+- `finemap.ld_plink_prefix` — Plink stem (no `.bed`) when using `plink` mode.
+- `finemap.ld_regions_file` — optional regions TSV/GZ for `run-all` tiling
+  (CHR, START, END, URL_PREFIX); defaults to PolyFun’s bundled `ukb_regions`.
+- `paths.ld_cache` — cached LD matrices; auto-scoped under `data/ld_cache/{id}`
+  when `--gwas-id` is set.
 - `builds` — declares hg/build of GWAS, entropy, and LD inputs. When the
   GWAS and entropy builds differ, positions are lifted over via the chain
   files downloaded by `setup`.
@@ -121,10 +192,12 @@ binary.
 
 ## Caveats
 
-- **LD reference panel.** UKB precomputed LD is N≈337 K white-British UK
-  Biobank individuals. The DIAMANTE-style T2D EUR sumstats shipped here
-  are a meta-analysis with much larger N. PolyFun's own paper accepts this
-  approximation; we surface it explicitly so it isn't forgotten.
+- **LD reference mismatch.** Match your LD source to ancestry and GWAS
+  **`builds.ld`**. NPZ presets from Broad are EUR-like UK Biobank; for other
+  ancestries configure `plink` LD or supply your own `ld_regions_file`/URL
+  prefix — see **LD panel** above. Using EUR LD for non-European GWAS is a
+  known approximation (sample-size mismatch with meta-analysis sumstats is
+  separate but also worth noting).
 - **Reference build.** UKB LD and the GWAS sumstats here are hg19. The
   entropy parquets are hg38 (per GPN-MSA convention). We lift over per-SNP
   positions hg19 → hg38 only for the variants we need, so we never

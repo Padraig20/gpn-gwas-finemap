@@ -1,0 +1,21 @@
+# Copy to e.g. configs/datasets/AFR_t2d.yaml and point paths to your data.
+# Use when EUR-shaped UK Biobank LD mismatch is unacceptable: LD is computed
+# from a Plink reference (e.g. 1000 Genomes AFR phased VCF → Plink, same build
+# as your sumstats, typically GRCh37).
+
+gwas_dataset:
+  id: AFR
+  auto_paths: true
+
+finemap:
+  ld_mode: plink
+  # Path without .bed (relative to repo root or absolute)
+  ld_plink_prefix: data/reference/phase3_afr_merged/chrALL
+
+paths:
+  gwas_raw: data/gwas/AFR/your_trait_sumstats.tsv
+
+builds:
+  gwas: hg19
+  entropy: hg38
+  ld: hg19
