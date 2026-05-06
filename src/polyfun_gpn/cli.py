@@ -96,6 +96,33 @@ def _ld_regions_file_option() -> Optional[Path]:
     )
 
 
+@app.command("list-datasets")
+def list_datasets(
+    registry: Path = typer.Option(
+        Path("configs/datasets/datasets.tsv"),
+        help="Registry file with columns: slug yaml gwas_raw notes",
+    ),
+) -> None:
+    """Print known dataset slugs with their YAML + raw GWAS paths."""
+    if not registry.exists():
+        typer.echo(f"Missing registry: {registry}", err=True)
+        raise typer.Exit(code=1)
+    rows = registry.read_text().splitlines()
+    if not rows:
+        typer.echo("(empty registry)")
+        return
+    header = rows[0].split("\t")
+    width = [max(len(header[i]), *(len(r.split("\t")[i]) if len(r.split("\t")) > i else 0 for r in rows[1:])) for i in range(len(header))]
+    fmt = "  ".join("{:<%d}" % w for w in width)
+    typer.echo(fmt.format(*header))
+    typer.echo(fmt.format(*("-" * w for w in width)))
+    for r in rows[1:]:
+        if not r.strip() or r.startswith("#"):
+            continue
+        cols = r.split("\t") + [""] * len(header)
+        typer.echo(fmt.format(*cols[: len(header)]))
+
+
 @app.command()
 def setup(
     config: Optional[Path] = _config_option(),

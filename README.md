@@ -92,32 +92,56 @@ under `output/genome_wide/{prior}/`. Restrict to one chromosome with
 
 ## Multi-GWAS / multi-ancestry
 
-Each GWAS (e.g. by ancestry) should use its **own harmonised parquet** and
-**own output tree** so runs do not overwrite each other.
+Each GWAS (e.g. by ancestry) uses its **own harmonised parquet** and **own
+output tree** so runs never collide. The DIAMANTE T2D meta-analyses for the
+five major ancestries are wired up out-of-the-box:
 
-**Option A — CLI convention** (no extra YAML file):
+| Slug | YAML | Raw file | LD recommendation |
+| ---- | ---- | -------- | ----------------- |
+| `EUR` | `configs/datasets/EUR.yaml` | `data/gwas/EUR_Metal_LDSC-CORR_Neff.v2.txt` | UKB EUR NPZ (default) |
+| `AFA` | `configs/datasets/AFA.yaml` | `data/gwas/AFA_Metal_LDSC-CORR_Neff.v2.txt` | switch to `plink` + 1000G AFR |
+| `EAS` | `configs/datasets/EAS.yaml` | `data/gwas/EAS_Metal_LDSC-CORR_Neff.v2.txt` | switch to `plink` + 1000G EAS |
+| `HIS` | `configs/datasets/HIS.yaml` | `data/gwas/HIS_Metal_LDSC-CORR_Neff.v2.txt` | switch to `plink` + 1000G AMR |
+| `SAS` | `configs/datasets/SAS.yaml` | `data/gwas/SAS_Metal_LDSC-CORR_Neff.v2.txt` | switch to `plink` + 1000G SAS |
+
+Discover them at any time with:
 
 ```bash
-uv run polyfun-gpn harmonize --gwas-id AFR --gwas-raw /path/to/AFR_sumstats.txt
-uv run polyfun-gpn run --gwas-id AFR --loci configs/loci_demo.tsv --prior entropy
-uv run polyfun-gpn aggregate --gwas-id AFR --prior entropy
+uv run polyfun-gpn list-datasets
+```
+
+**Option A — wrapper script** (uses the per-slug YAML):
+
+```bash
+scripts/run_dataset.sh EUR entropy        # harmonize + run + aggregate
+scripts/run_dataset.sh AFA none
+
+# Sweep every slug × {entropy, none}:
+scripts/run_all_datasets.sh
+scripts/compare_priors_all_datasets.sh    # entropy vs none per slug
+```
+
+**Option B — explicit CLI** (works without a YAML):
+
+```bash
+uv run polyfun-gpn harmonize --gwas-id EAS --gwas-raw data/gwas/EAS_Metal_LDSC-CORR_Neff.v2.txt
+uv run polyfun-gpn run       --gwas-id EAS --loci configs/loci_demo.tsv --prior entropy
+uv run polyfun-gpn aggregate --gwas-id EAS --prior entropy
 ```
 
 With `--gwas-id SLUG` (where `SLUG` is not `default`):
 
-- Raw path is unchanged unless you also pass `--gwas-raw PATH`.
 - Harmonised output: `data/gwas/{SLUG}/sumstats.hg19.parquet`
-- All pipeline outputs: `output/{SLUG}/` (e.g. `output/{SLUG}/loci/...`,
-  `output/{SLUG}/results/finemap.demo.entropy.tsv`)
-- FINEMAP LD disk cache (NPZ/`--cache-dir`): `data/ld_cache/{SLUG}/`
+- Pipeline outputs: `output/{SLUG}/` (`loci/...`, `results/finemap.demo.*.tsv`)
+- FINEMAP LD disk cache: `data/ld_cache/{SLUG}/`
 
-**Option B — YAML per study** — set `paths.gwas_raw`, `paths.gwas_harmonised`,
-and `paths.output_dir` explicitly, or use `gwas_dataset.auto_paths: true` with
-`gwas_dataset.id: EUR` so harmonised + output paths follow the same convention
-without repeating them. See [configs/datasets/eur_t2d.yaml](configs/datasets/eur_t2d.yaml).
+**Option C — YAML per study** — same paths driven from `gwas_dataset.id` +
+`gwas_dataset.auto_paths: true`. Each ancestry YAML in `configs/datasets/` is
+exactly that. Use `configs/datasets/_plink_template.yaml` as the starting
+point for a brand-new study.
 
 Entropy background and liftover chains stay **shared** across ancestries
-(the same `data/background/` and `data/reference/`).
+(`data/background/` and `data/reference/` are not slug-scoped).
 
 ### LD panel (configurable)
 
@@ -138,7 +162,9 @@ FINEMAP needs an LD matrix. Two modes (`finemap.ld_mode`):
 2. **`plink`** — LD is computed from a **Plink genotype triplet** on disk
    (ancestry-matched reference, e.g. 1000 Genomes). Set
    `finemap.ld_plink_prefix` to the path **without** `.bed` (PolyFun
-   `--geno`). See [configs/datasets/afr_plink_template.yaml](configs/datasets/afr_plink_template.yaml).
+   `--geno`). See [configs/datasets/_plink_template.yaml](configs/datasets/_plink_template.yaml).
+   The non-EUR ancestry YAMLs ship with a commented-out `plink` block — flip
+   to it once you have a 1000 Genomes (or other ancestry-matched) panel.
 
 **CLI mirrors** (for `run` / `run-all`): `--ld-mode`, `--ld-npz-prefix`,
 `--ld-plink`, `--ld-regions-file`.

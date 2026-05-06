@@ -1,0 +1,20 @@
+# DIAMANTE-style T2D meta, European ancestry.
+# Outputs are auto-routed under output/EUR/ and harmonised parquet to
+# data/gwas/EUR/sumstats.hg19.parquet (auto_paths).
+
+gwas_dataset:
+  id: EUR
+  auto_paths: true
+
+paths:
+  gwas_raw: data/gwas/EUR_Metal_LDSC-CORR_Neff.v2.txt
+
+builds:
+  gwas: hg19
+  entropy: hg38
+  ld: hg19
+
+finemap:
+  # UKB white-British EUR LD: the canonical Broad-hosted reference.
+  ld_mode: precomputed_npz
+  ld_npz_url_prefix: https://broad-alkesgroup-ukbb-ld.s3.amazonaws.com/UKBB_LD/

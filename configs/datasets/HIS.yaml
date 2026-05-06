@@ -1,0 +1,26 @@
+# DIAMANTE-style T2D meta, Hispanic / Admixed American ancestry.
+# Outputs auto-routed under output/HIS/, harmonised parquet under data/gwas/HIS/.
+#
+# WARNING: LD defaults to the EUR UKB matrix below so first runs work. For
+# trustworthy fine-mapping you SHOULD swap to an ancestry-matched panel —
+# see the commented `ld_mode: plink` block below and provide a 1000G AMR
+# Plink triplet (.bed/.bim/.fam) on the same build (`builds.ld`).
+
+gwas_dataset:
+  id: HIS
+  auto_paths: true
+
+paths:
+  gwas_raw: data/gwas/HIS_Metal_LDSC-CORR_Neff.v2.txt
+
+builds:
+  gwas: hg19
+  entropy: hg38
+  ld: hg19
+
+finemap:
+  ld_mode: precomputed_npz
+  ld_npz_url_prefix: https://broad-alkesgroup-ukbb-ld.s3.amazonaws.com/UKBB_LD/
+  # Recommended for ancestry-correct LD:
+  # ld_mode: plink
+  # ld_plink_prefix: data/reference/1000g_phase3_amr/chrALL

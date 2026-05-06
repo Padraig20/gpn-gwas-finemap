@@ -39,3 +39,7 @@ packages = ["src/polyfun_gpn"]
 dev = [
     "pytest>=8.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["external", ".uv-cache", "data", "output"]
