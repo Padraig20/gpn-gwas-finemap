@@ -1,0 +1,24 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# polyfun-gpn artifacts
+data/background/
+data/ld_cache/
+data/reference/
+data/gwas/sumstats.hg19.parquet
+external/polyfun/
+external/bin/
+output/
+.pytest_cache/
+.uv-cache/
+
+data
+uv.lock
