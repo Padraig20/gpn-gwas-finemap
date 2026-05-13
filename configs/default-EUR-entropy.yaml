@@ -17,7 +17,7 @@ paths:
   gwas_harmonised: data/gwas/EUR/sumstats.hg19.parquet
   background: data/background/entropy_bg.npz
   reference_dir: data/reference
-  ld_cache: data/ld_cache
+  ld_cache: data/ld_cache/EUR-entropy
   polyfun_dir: external/polyfun
   finemap_exe: external/bin/finemap
   output_dir: output/EUR
