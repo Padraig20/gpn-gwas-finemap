@@ -25,6 +25,9 @@ dependencies = [
     "networkx>=3.2",
     # PolyFun uses pkg_resources, which setuptools 80+ no longer ships.
     "setuptools>=70,<80",
+    # Plotting for scripts/compare_runs/compare_pip.py. scipy is already pinned
+    # above; matplotlib is the only new dependency for the comparison plots.
+    "matplotlib>=3.8",
 ]
 
 [project.scripts]

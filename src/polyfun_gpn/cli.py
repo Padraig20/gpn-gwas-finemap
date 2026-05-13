@@ -32,10 +32,16 @@ app = typer.Typer(
 
 
 class PriorMode(str, Enum):
-    """Two supported prior modes."""
+    """Supported prior modes.
+
+    * ``none`` — uniform causal prior (PolyFun ``--non-funct``).
+    * ``entropy`` — global surprise: ``SNPVAR = exp(tau * -log f_bg(e))``.
+    * ``entropy_raw`` — local raw entropy, negated: ``SNPVAR = exp(-tau * e)``.
+    """
 
     none = "none"
     entropy = "entropy"
+    entropy_raw = "entropy_raw"
 
 
 def _config_option() -> Path:
@@ -76,7 +82,11 @@ def _prior_option() -> Optional[PriorMode]:
     return typer.Option(
         None,
         "--prior",
-        help="Prior mode (overrides prior.mode in YAML): 'none' or 'entropy'.",
+        help=(
+            "Prior mode (overrides prior.mode in YAML): "
+            "'none', 'entropy' (global surprise), or 'entropy_raw' "
+            "(negated raw per-locus entropy)."
+        ),
     )
 
 

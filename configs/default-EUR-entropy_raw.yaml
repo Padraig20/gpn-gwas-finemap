@@ -1,15 +1,18 @@
 # polyfun-gpn configuration for the EUR T2D meta-analysis.
 #
 # Every CLI flag has a YAML counterpart so the full pipeline can be driven
-# from one `-c configs/default-EUR.yaml`. CLI flags, when passed, win.
+# from one `-c configs/default-EUR-entropy_raw.yaml`. CLI flags, when passed, win.
 #
-#   --gwas-raw PATH        paths.gwas_raw
-#   --output-dir PATH      paths.output_dir
-#   --loci PATH            paths.loci
-#   --prior {none,entropy,entropy_raw} prior.mode
-#   --ld-mode MODE         finemap.ld_mode      (precomputed_npz | plink)
-#   --ld-npz-prefix URL    finemap.ld_npz_url_prefix
-#   --ld-plink PATH        finemap.ld_plink_prefix
+#   --gwas-raw PATH                     paths.gwas_raw
+#   --output-dir PATH                   paths.output_dir
+#   --loci PATH                         paths.loci
+#   --prior {none,entropy,entropy_raw}  prior.mode
+#   --ld-mode MODE                      finemap.ld_mode      (precomputed_npz | plink)
+#   --ld-npz-prefix URL                 finemap.ld_npz_url_prefix
+#   --ld-plink PATH                     finemap.ld_plink_prefix
+#
+# `entropy_raw` uses the negated per-SNP entropy directly (SNPVAR = exp(-tau * e));
+# no genome-wide background is consulted, so `build-bg` is not required.
 
 paths:
   entropy_dir: data/entropy
@@ -17,7 +20,7 @@ paths:
   gwas_harmonised: data/gwas/EUR/sumstats.hg19.parquet
   background: data/background/entropy_bg.npz
   reference_dir: data/reference
-  ld_cache: data/ld_cache/EUR-none
+  ld_cache: data/ld_cache/EUR-entropy_raw
   polyfun_dir: external/polyfun
   finemap_exe: external/bin/finemap
   output_dir: output/EUR
@@ -36,9 +39,9 @@ background:
   seed: 42
 
 prior:
-  mode: none       # none | entropy
+  mode: entropy_raw   # none | entropy | entropy_raw
   tau: 1.0
-  epsilon: 1.0e-6
+  epsilon: 1.0e-6     # unused for entropy_raw, kept for symmetry with `entropy`
 
 finemap:
   method: finemap

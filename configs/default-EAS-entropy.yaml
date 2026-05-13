@@ -6,7 +6,7 @@
 #   --gwas-raw PATH        paths.gwas_raw
 #   --output-dir PATH      paths.output_dir
 #   --loci PATH            paths.loci
-#   --prior {none,entropy} prior.mode
+#   --prior {none,entropy,entropy_raw} prior.mode
 #   --ld-mode MODE         finemap.ld_mode      (precomputed_npz | plink)
 #   --ld-npz-prefix URL    finemap.ld_npz_url_prefix
 #   --ld-plink PATH        finemap.ld_plink_prefix

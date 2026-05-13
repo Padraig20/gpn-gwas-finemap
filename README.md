@@ -26,9 +26,21 @@ compute `-log f_bg(entropy)` against the genome-wide background.
 | Mode | Source of `SNPVAR` | What FINEMAP sees |
 | ---- | ------------------ | ----------------- |
 | `none` | (column omitted) | `--non-funct`: uniform causal prior baked into FINEMAP |
-| `entropy` | `exp(τ · −log f_bg(e))` from genome-wide entropy | per-SNP prior derived from conservation |
+| `entropy` | `exp(τ · −log f_bg(e))` — global surprise vs. the genome-wide background | per-SNP prior derived from how rare each entropy value is genome-wide |
+| `entropy_raw` | `exp(−τ · e)` — raw per-locus entropy, negated | per-SNP prior derived from the entropy value itself, no background |
 
-For `entropy`, variants without an entropy lookup fall back to the locus
+`entropy` and `entropy_raw` agree on the sign convention — **low entropy
+(more conserved) → higher prior probability**. They differ in *what* the
+weight is measuring:
+
+* `entropy` is *global*: a SNP at entropy `e` is upweighted by how rare that
+  value is across the genome (using the cached `entropy_bg.npz` histogram).
+  Run `polyfun-gpn build-bg` once before using it.
+* `entropy_raw` is *local*: each SNP's weight depends only on its own entropy
+  value, never on the genome-wide distribution. No background build step is
+  required, so it's the fastest functionally-informed mode.
+
+In both modes, variants without an entropy lookup fall back to the locus
 median (tagged `prior_source = "median_fallback"` in `snpvar_audit.tsv`).
 
 ## Project layout
@@ -93,7 +105,7 @@ flag has a YAML counterpart, and CLI flags (when passed) override YAML.
 | Raw GWAS TSV | `--gwas-raw PATH` | `paths.gwas_raw` |
 | Output directory | `--output-dir PATH` (`-o`) | `paths.output_dir` |
 | Loci TSV | `--loci PATH` | `paths.loci` |
-| Prior mode | `--prior {none,entropy}` | `prior.mode` |
+| Prior mode | `--prior {none,entropy,entropy_raw}` | `prior.mode` |
 | LD source mode | `--ld-mode {precomputed_npz,plink}` | `finemap.ld_mode` |
 | LD NPZ URL prefix | `--ld-npz-prefix URL` | `finemap.ld_npz_url_prefix` |
 | LD Plink prefix | `--ld-plink PATH` | `finemap.ld_plink_prefix` |

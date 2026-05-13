@@ -33,6 +33,10 @@ def test_cli_prior_mode_override() -> None:
     assert cfg.prior.mode == "none"
     apply_cli_overrides(cfg, prior_mode="entropy")
     assert cfg.prior.mode == "entropy"
+    apply_cli_overrides(cfg, prior_mode="entropy_raw")
+    assert cfg.prior.mode == "entropy_raw"
+    apply_cli_overrides(cfg, prior_mode="ENTROPY_RAW")
+    assert cfg.prior.mode == "entropy_raw"
 
 
 def test_cli_invalid_prior_mode_raises() -> None:

@@ -3,12 +3,14 @@
 For each locus we:
   1. Slice the harmonised genome-wide sumstats parquet to the locus window
      (hg19 coordinates).
-  2. For ``--prior entropy``: look up entropy (with hg19→hg38 liftover when
-     ``builds.gwas != builds.entropy``) and compute SNPVAR with locus-median
-     fallback for misses.
+  2. For ``--prior entropy`` / ``--prior entropy_raw``: look up entropy (with
+     hg19→hg38 liftover when ``builds.gwas != builds.entropy``) and compute
+     SNPVAR with locus-median fallback for misses.  ``entropy`` uses the
+     genome-wide background; ``entropy_raw`` is purely local and skips the
+     background load.
   3. Write ``output/loci/{prior}/{locus_id}/sumstats.tsv`` in the format
-     PolyFun's ``finemapper.py`` expects (``SNPVAR`` column for the
-     ``entropy`` mode; omitted for ``none``).
+     PolyFun's ``finemapper.py`` expects (``SNPVAR`` column for the entropy
+     modes; omitted for ``none``).
 
 Output layout per locus:
     output_dir/loci/{prior}/{locus_id}/
@@ -81,10 +83,14 @@ def prepare_locus(
 
     n_with_entropy = 0
 
-    if n_total > 0 and prior_mode == "entropy":
+    if n_total > 0 and prior_mode in ("entropy", "entropy_raw"):
         entropy_values = _resolve_entropy_for_locus(cfg, df)
         n_with_entropy = int(np.isfinite(entropy_values).sum())
-        density, edges = load_background(cfg)
+        if prior_mode == "entropy":
+            density, edges = load_background(cfg)
+        else:
+            density = np.empty(0, dtype=np.float64)
+            edges = np.empty(0, dtype=np.float64)
         df = attach_priors(
             df,
             entropy_values,

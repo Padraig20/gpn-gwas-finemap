@@ -21,7 +21,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "default.yaml"
 
-PriorMode = Literal["none", "entropy"]
+PriorMode = Literal["none", "entropy", "entropy_raw"]
 
 
 class _Base(BaseModel):
@@ -65,9 +65,19 @@ class Background(_Base):
 class PriorParams(_Base):
     mode: PriorMode = Field(
         "entropy",
-        description="Prior mode: 'none' (uniform / non-functional) or 'entropy'.",
+        description=(
+            "Prior mode: 'none' (uniform / non-functional), 'entropy' "
+            "(surprise vs. genome-wide background), or 'entropy_raw' "
+            "(negated raw per-SNP entropy, no background)."
+        ),
     )
-    tau: float = Field(1.0, description="Temperature on the surprise score.")
+    tau: float = Field(
+        1.0,
+        description=(
+            "Temperature on the per-SNP score; for 'entropy' it scales "
+            "-log f_bg(e), for 'entropy_raw' it scales -e directly."
+        ),
+    )
     epsilon: float = Field(
         1e-6, description="Density floor to avoid log(0) on tail values."
     )
@@ -180,9 +190,9 @@ def apply_cli_overrides(
         cfg.paths.loci = Path(loci)
     if prior_mode is not None:
         m = prior_mode.strip().lower()
-        if m not in ("none", "entropy"):
+        if m not in ("none", "entropy", "entropy_raw"):
             raise ValueError(
-                f"Invalid --prior {prior_mode!r}; use none or entropy."
+                f"Invalid --prior {prior_mode!r}; use none, entropy, or entropy_raw."
             )
         cfg.prior.mode = m  # type: ignore[assignment]
     if ld_mode is not None:
