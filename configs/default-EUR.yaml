@@ -46,8 +46,10 @@ finemap:
   memory_gb: 4
   threads: 4
   locus_window_bp: 1500000
-  # LD: precomputed_npz (Broad-style per-region NPZ URLs) vs plink (ancestry-matched --geno)
-  ld_mode: precomputed_npz
+  # LD source: plink uses the ancestry-matched 1000G reference built by
+  # scripts/compute_ld/prepare_unrelated_reference.sh; the NPZ prefix is
+  # kept here as a fallback so you can flip ld_mode without losing it.
+  ld_mode: plink
   ld_npz_url_prefix: https://broad-alkesgroup-ukbb-ld.s3.amazonaws.com/UKBB_LD/
-  ld_plink_prefix: null
+  ld_plink_prefix: data/ld_panels/1000G.EUR.unrelated
   max_concurrent_jobs: 4

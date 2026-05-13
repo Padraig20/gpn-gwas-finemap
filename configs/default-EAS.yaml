@@ -46,10 +46,11 @@ finemap:
   memory_gb: 4
   threads: 4
   locus_window_bp: 1500000
-  # LD: precomputed_npz (Broad-style per-region NPZ URLs) vs plink (ancestry-matched --geno)
-  # The default NPZ prefix below is UKB white-British (≈EUR); for EAS prefer
-  # `plink` mode with a 1000G EAS panel.
-  ld_mode: precomputed_npz
+  # LD source: plink uses the ancestry-matched 1000G EAS panel built by
+  # scripts/compute_ld/prepare_unrelated_reference.sh. The Broad NPZ prefix
+  # is UKB white-British (~EUR), which is wrong for EAS -- keep ld_mode:
+  # plink here unless you're deliberately running EAS sumstats against EUR LD.
+  ld_mode: plink
   ld_npz_url_prefix: https://broad-alkesgroup-ukbb-ld.s3.amazonaws.com/UKBB_LD/
-  ld_plink_prefix: null
+  ld_plink_prefix: data/ld_panels/1000G.EAS.unrelated
   max_concurrent_jobs: 4
