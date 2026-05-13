@@ -77,16 +77,21 @@ bash scripts/compute_ld/prepare_unrelated_reference.sh EAS
 What the script does, in order:
 
 1. Convert the related-individuals list to PLINK's `FID  IID` two-column form.
-2. Scan `allchr.${ANC}.biallelicsnps.bim` with PLINK 1.9's
-   `--list-duplicate-vars ids-only suppress-first` to find variants that
-   share `(chrom, bp, allele-set)` — i.e. mirror-encoded biallelic SNPs
-   like `A/C` plus `C/A` at the same position. PolyFun's `set_snpid_index`
-   normalises alleles alphabetically when building its `snpid` and rejects
-   the whole panel if any normalised duplicate survives, so we have to
+2. Scan `allchr.${ANC}.biallelicsnps.bim` with a one-pass awk that
+   normalises alleles alphabetically (exactly what PolyFun's
+   `set_snpid_index` does — `snpid = chrom.bp.A1.A2` with `A1 ≤ A2`) and
+   prints the variant ID (column 2 of the `.bim`) of every 2nd+
+   occurrence of the same `(chrom, bp, allele-set)`. PolyFun rejects the
+   whole panel if any normalised duplicate survives, so we have to
    drop them now or fine-mapping aborts per locus.
+   We do this in awk rather than `plink --list-duplicate-vars` because
+   the modifier syntax (`ids-only suppress-first`) isn't accepted by
+   every PLINK 1.9 build (some exit code 8 silently); awk has no
+   PLINK-version coupling and is faster (no genotype I/O).
 3. `--remove` related individuals and `--exclude` the duplicate variant IDs
-   in a single `--make-bed` pass.
-4. Re-scan the output `.bim` with a one-line awk that re-derives the
+   in a single `--make-bed` pass. PLINK's stdout/stderr stream straight to
+   the terminal so any failure is visible immediately in cluster logs.
+4. Re-scan the output `.bim` with a second one-line awk that re-derives the
    normalised snpid and reports residual duplicates (should always be 0).
    The script logs a `WARNING` and a hint if any survive.
 
@@ -190,11 +195,19 @@ uv run polyfun-gpn run -c configs/default-EAS.yaml \
   occurrences are hidden. Cause: the source `allchr.${ANC}.biallelicsnps`
   contains rows like `1 rs1 0 100 A C` and `1 rs2 0 100 C A` — same SNP
   encoded with swapped alleles. The current `prepare_unrelated_reference.sh`
-  drops these via `--list-duplicate-vars`, but older outputs you built
-  before that fix won't be clean. Just `--overwrite`:
+  drops these via an awk dedup pass, but older outputs you built before
+  that fix won't be clean. Just `--overwrite`:
 
   ```bash
   bash scripts/compute_ld/prepare_unrelated_reference.sh EUR --overwrite
+  ```
+
+  Also clear any cached LD npz from the failed run -- the cache key is
+  the plink prefix + region, not the BIM contents, so a stale dirty
+  matrix would trip the same check on retry:
+
+  ```bash
+  rm -f data/ld_cache/1000G.${ANC}.unrelated.*.npz
   ```
 * **Empty per-locus PLINK.** Check `data/ld_panels/loci/<ANC>/<id>.plink.log` —
   a locus on chrY/chrM (or an X locus when the reference is autosomes-only)
