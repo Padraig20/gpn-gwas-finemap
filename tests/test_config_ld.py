@@ -27,11 +27,15 @@ def test_legacy_ukb_ld_url_yaml_alias() -> None:
 
 
 def test_default_yaml_loads_finemap_optional_paths() -> None:
+    """The shipped EUR YAML now drives an ancestry-matched plink LD panel
+    (see scripts/compute_ld/) and the shared-loci TSV produced by
+    scripts/find_shared_loci.py. Keep the assertions tied to that wiring so
+    accidental flips back to the UKB-NPZ default don't go unnoticed."""
     cfg = load_config(PROJECT_ROOT / "configs/default-EUR.yaml")
-    assert cfg.finemap.ld_plink_prefix is None
-    assert cfg.finemap.ld_mode == "precomputed_npz"
+    assert cfg.finemap.ld_mode == "plink"
+    assert cfg.finemap.ld_plink_prefix == Path("data/ld_panels/1000G.EUR.unrelated")
     assert cfg.prior.mode == "entropy"
-    assert cfg.paths.loci == Path("configs/loci_demo.tsv")
+    assert cfg.paths.loci == Path("configs/loci_shared_EUR_EAS.tsv")
 
 
 def test_resolve_plink_prefix_and_validate(tmp_path: Path) -> None:

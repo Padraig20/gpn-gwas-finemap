@@ -19,7 +19,9 @@ dependencies = [
     # PolyFun's own runtime requirements (we shell out to their finemapper.py).
     "scikit-learn>=1.3",
     "bitarray>=2.9",
-    "pandas-plink>=2.2",
+    # 2.3.0+ replaced the deprecated `delim_whitespace=True` with `sep=r"\s+"`;
+    # required for pandas>=2.2, mandatory for pandas>=3.0 (which removes the kw).
+    "pandas-plink>=2.3.2",
     "networkx>=3.2",
     # PolyFun uses pkg_resources, which setuptools 80+ no longer ships.
     "setuptools>=70,<80",
