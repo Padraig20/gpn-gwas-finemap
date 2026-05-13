@@ -1,55 +1,54 @@
-"""GWAS dataset path layout (CLI + YAML auto_paths)."""
+"""CLI overrides for GWAS path, output dir, loci file, and prior mode."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from polyfun_gpn.config import (
-    Config,
-    apply_gwas_auto_paths_from_yaml,
-    apply_gwas_cli_overrides,
-)
+import pytest
+
+from polyfun_gpn.config import Config, apply_cli_overrides
 
 
-def test_cli_gwas_id_sets_convention_paths() -> None:
+def test_cli_gwas_raw_override() -> None:
     cfg = Config()
-    apply_gwas_cli_overrides(cfg, gwas_id="AFR", gwas_raw=None)
-    assert cfg.gwas_dataset.id == "AFR"
-    assert cfg.paths.output_dir == Path("output/AFR")
-    assert cfg.paths.gwas_harmonised == Path("data/gwas/AFR/sumstats.hg19.parquet")
-    assert cfg.paths.ld_cache == Path("data/ld_cache/AFR")
-
-
-def test_cli_gwas_raw_only() -> None:
-    cfg = Config()
-    apply_gwas_cli_overrides(cfg, gwas_id=None, gwas_raw=Path("/tmp/raw.tsv"))
+    apply_cli_overrides(cfg, gwas_raw=Path("/tmp/raw.tsv"))
     assert cfg.paths.gwas_raw == Path("/tmp/raw.tsv")
-    assert cfg.paths.output_dir == Path("output")
 
 
-def test_cli_gwas_id_default_does_not_renest() -> None:
+def test_cli_output_dir_override() -> None:
     cfg = Config()
-    apply_gwas_cli_overrides(cfg, gwas_id="default", gwas_raw=None)
-    assert cfg.gwas_dataset.id == "default"
-    assert cfg.paths.output_dir == Path("output")
+    apply_cli_overrides(cfg, output_dir=Path("/tmp/runs/foo"))
+    assert cfg.paths.output_dir == Path("/tmp/runs/foo")
 
 
-def test_yaml_auto_paths() -> None:
+def test_cli_loci_override() -> None:
     cfg = Config()
-    cfg.gwas_dataset.id = "EAS"
-    cfg.gwas_dataset.auto_paths = True
-    cfg.paths.gwas_raw = Path("data/gwas/EAS/meta.txt")
-    apply_gwas_auto_paths_from_yaml(cfg)
-    assert cfg.paths.output_dir == Path("output/EAS")
-    assert cfg.paths.gwas_harmonised == Path("data/gwas/EAS/sumstats.hg19.parquet")
-    assert cfg.paths.ld_cache == Path("data/ld_cache/EAS")
-    assert cfg.paths.gwas_raw == Path("data/gwas/EAS/meta.txt")
+    apply_cli_overrides(cfg, loci=Path("/tmp/loci.tsv"))
+    assert cfg.paths.loci == Path("/tmp/loci.tsv")
 
 
-def test_load_pipeline_config_cli_overrides_yaml_id() -> None:
+def test_cli_prior_mode_override() -> None:
     cfg = Config()
-    cfg.gwas_dataset.id = "YAML"
-    cfg.paths.output_dir = Path("output/yaml_custom")
-    apply_gwas_cli_overrides(cfg, gwas_id="CLI", gwas_raw=None)
-    assert cfg.gwas_dataset.id == "CLI"
-    assert cfg.paths.output_dir == Path("output/CLI")
+    apply_cli_overrides(cfg, prior_mode="none")
+    assert cfg.prior.mode == "none"
+    apply_cli_overrides(cfg, prior_mode="entropy")
+    assert cfg.prior.mode == "entropy"
+
+
+def test_cli_invalid_prior_mode_raises() -> None:
+    cfg = Config()
+    with pytest.raises(ValueError):
+        apply_cli_overrides(cfg, prior_mode="sldsc")
+
+
+def test_cli_no_override_keeps_yaml_defaults() -> None:
+    cfg = Config()
+    original_raw = cfg.paths.gwas_raw
+    original_out = cfg.paths.output_dir
+    original_loci = cfg.paths.loci
+    original_prior = cfg.prior.mode
+    apply_cli_overrides(cfg)
+    assert cfg.paths.gwas_raw == original_raw
+    assert cfg.paths.output_dir == original_out
+    assert cfg.paths.loci == original_loci
+    assert cfg.prior.mode == original_prior

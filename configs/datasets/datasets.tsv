@@ -1,6 +1,0 @@
-slug	yaml	gwas_raw	notes
-EUR	configs/datasets/EUR.yaml	data/gwas/EUR_Metal_LDSC-CORR_Neff.v2.txt	European; UKB EUR LD is appropriate
-AFA	configs/datasets/AFA.yaml	data/gwas/AFA_Metal_LDSC-CORR_Neff.v2.txt	African / African-American; switch to plink + 1000G AFR for valid LD
-EAS	configs/datasets/EAS.yaml	data/gwas/EAS_Metal_LDSC-CORR_Neff.v2.txt	East Asian; switch to plink + 1000G EAS for valid LD
-HIS	configs/datasets/HIS.yaml	data/gwas/HIS_Metal_LDSC-CORR_Neff.v2.txt	Hispanic/Admixed American; switch to plink + 1000G AMR for valid LD
-SAS	configs/datasets/SAS.yaml	data/gwas/SAS_Metal_LDSC-CORR_Neff.v2.txt	South Asian; switch to plink + 1000G SAS for valid LD

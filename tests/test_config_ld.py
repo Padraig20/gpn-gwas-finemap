@@ -1,4 +1,4 @@
-"""LD configuration (NPZ URLs, Plink genotypes, YAML aliases)."""
+"""LD configuration (NPZ URLs, Plink genotypes, YAML aliases, CLI overrides)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import pytest
 
 from polyfun_gpn.config import (
     Config,
+    apply_cli_overrides,
     load_config,
     resolve_plink_prefix,
     validate_finemap_ld,
@@ -26,9 +27,11 @@ def test_legacy_ukb_ld_url_yaml_alias() -> None:
 
 
 def test_default_yaml_loads_finemap_optional_paths() -> None:
-    cfg = load_config(PROJECT_ROOT / "configs/default.yaml")
+    cfg = load_config(PROJECT_ROOT / "configs/default-EUR.yaml")
     assert cfg.finemap.ld_plink_prefix is None
-    assert cfg.finemap.ld_regions_file is None
+    assert cfg.finemap.ld_mode == "precomputed_npz"
+    assert cfg.prior.mode == "entropy"
+    assert cfg.paths.loci == Path("configs/loci_demo.tsv")
 
 
 def test_resolve_plink_prefix_and_validate(tmp_path: Path) -> None:
@@ -57,19 +60,24 @@ def test_validate_plink_fails_when_triplet_missing(tmp_path: Path) -> None:
         validate_finemap_ld(cfg)
 
 
-def test_validate_regions_file_missing() -> None:
+def test_cli_ld_overrides() -> None:
     cfg = Config()
-    cfg.finemap.ld_mode = "precomputed_npz"
-    cfg.finemap.ld_regions_file = Path("/nonexistent/ukb_regions.tsv.gz")
-    with pytest.raises(FileNotFoundError):
-        validate_finemap_ld(cfg)
+    apply_cli_overrides(
+        cfg,
+        ld_mode="plink",
+        ld_plink_prefix=Path("/tmp/refs/eur_chr1"),
+    )
+    assert cfg.finemap.ld_mode == "plink"
+    assert cfg.finemap.ld_plink_prefix == Path("/tmp/refs/eur_chr1")
 
 
-def test_validate_regions_optional_ok_when_file_exists(tmp_path: Path) -> None:
-    f = tmp_path / "regions.tsv"
-    f.write_text("CHR\tSTART\tEND\tURL_PREFIX\n")
+def test_cli_ld_npz_prefix_override() -> None:
     cfg = Config()
-    cfg.paths.project_root = tmp_path
-    cfg.finemap.ld_mode = "precomputed_npz"
-    cfg.finemap.ld_regions_file = Path("regions.tsv")
-    validate_finemap_ld(cfg)
+    apply_cli_overrides(cfg, ld_npz_url_prefix="https://my-mirror/ld/")
+    assert cfg.finemap.ld_npz_url_prefix == "https://my-mirror/ld/"
+
+
+def test_cli_invalid_ld_mode_raises() -> None:
+    cfg = Config()
+    with pytest.raises(ValueError):
+        apply_cli_overrides(cfg, ld_mode="bogus")

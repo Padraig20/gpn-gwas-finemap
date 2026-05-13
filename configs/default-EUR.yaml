@@ -1,0 +1,53 @@
+# polyfun-gpn configuration for the EUR T2D meta-analysis.
+#
+# Every CLI flag has a YAML counterpart so the full pipeline can be driven
+# from one `-c configs/default-EUR.yaml`. CLI flags, when passed, win.
+#
+#   --gwas-raw PATH        paths.gwas_raw
+#   --output-dir PATH      paths.output_dir
+#   --loci PATH            paths.loci
+#   --prior {none,entropy} prior.mode
+#   --ld-mode MODE         finemap.ld_mode      (precomputed_npz | plink)
+#   --ld-npz-prefix URL    finemap.ld_npz_url_prefix
+#   --ld-plink PATH        finemap.ld_plink_prefix
+
+paths:
+  entropy_dir: data/entropy
+  gwas_raw: data/gwas/EUR/EUR_Metal_LDSC-CORR_Neff.v2.txt
+  gwas_harmonised: data/gwas/EUR/sumstats.hg19.parquet
+  background: data/background/entropy_bg.npz
+  reference_dir: data/reference
+  ld_cache: data/ld_cache
+  polyfun_dir: external/polyfun
+  finemap_exe: external/bin/finemap
+  output_dir: output/EUR
+  loci: configs/loci_demo.tsv
+
+builds:
+  gwas: hg19
+  entropy: hg38
+  ld: hg19
+
+background:
+  n_samples: 10000000
+  n_bins: 500
+  entropy_min: 0.0
+  entropy_max: 3.0
+  seed: 42
+
+prior:
+  mode: entropy       # none | entropy
+  tau: 1.0
+  epsilon: 1.0e-6
+
+finemap:
+  method: finemap
+  max_num_causal: 5
+  memory_gb: 4
+  threads: 4
+  locus_window_bp: 1500000
+  # LD: precomputed_npz (Broad-style per-region NPZ URLs) vs plink (ancestry-matched --geno)
+  ld_mode: precomputed_npz
+  ld_npz_url_prefix: https://broad-alkesgroup-ukbb-ld.s3.amazonaws.com/UKBB_LD/
+  ld_plink_prefix: null
+  max_concurrent_jobs: 4

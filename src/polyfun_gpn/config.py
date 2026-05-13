@@ -1,9 +1,12 @@
-"""Project configuration loaded from YAML (defaults to configs/default.yaml).
+"""Project configuration loaded from YAML.
 
 The config object is intentionally flat-ish so it can be passed around as a
 single dependency. Paths are resolved relative to the project root unless
 absolute. Build assumptions (GWAS / entropy / LD reference) are surfaced here
 so the liftover step is opt-out via configuration rather than hard-coded.
+
+Every CLI flag has a YAML counterpart so the full pipeline can be driven
+from one ``-c configs/your.yaml``. CLI flags, when passed, override YAML.
 """
 
 from __future__ import annotations
@@ -17,6 +20,8 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "default.yaml"
+
+PriorMode = Literal["none", "entropy"]
 
 
 class _Base(BaseModel):
@@ -34,6 +39,7 @@ class Paths(_Base):
     polyfun_dir: Path = Path("external/polyfun")
     finemap_exe: Path = Path("external/bin/finemap")
     output_dir: Path = Path("output")
+    loci: Path = Path("configs/loci_demo.tsv")
 
     def absolute(self, attr: str) -> Path:
         p: Path = getattr(self, attr)
@@ -57,6 +63,10 @@ class Background(_Base):
 
 
 class PriorParams(_Base):
+    mode: PriorMode = Field(
+        "entropy",
+        description="Prior mode: 'none' (uniform / non-functional) or 'entropy'.",
+    )
     tau: float = Field(1.0, description="Temperature on the surprise score.")
     epsilon: float = Field(
         1e-6, description="Density floor to avoid log(0) on tail values."
@@ -70,8 +80,7 @@ class FineMapParams(_Base):
     """LD source for FINEMAP (PolyFun wrapper).
 
     * ``precomputed_npz`` — download Broad-style per-region NPZ matrices; use
-      :attr:`ld_npz_url_prefix` for the base URL and optional
-      :attr:`ld_regions_file` for genome-wide tiling + full ``--ld`` URLs.
+      :attr:`ld_npz_url_prefix` for the base URL.
     * ``plink`` — compute LD from a Plink genotype prefix (``--geno`` path
       without ``.bed``); use ancestry-matched reference panels when GWAS is not
       UKB-like EUR.
@@ -83,35 +92,12 @@ class FineMapParams(_Base):
     threads: int = 4
     locus_window_bp: int = 1_500_000
     ld_mode: LdMode = "precomputed_npz"
-    # Base URL for demo / per-block ``--ld`` when using UKB tiling (slash-terminated).
-    # YAML may still use the legacy key ``ukb_ld_url_prefix``.
     ld_npz_url_prefix: str = Field(
         default="https://broad-alkesgroup-ukbb-ld.s3.amazonaws.com/UKBB_LD/",
         validation_alias=AliasChoices("ld_npz_url_prefix", "ukb_ld_url_prefix"),
     )
-    # Optional PolyFun-style regions file (CHR, START, END, URL_PREFIX per row).
-    # Default: PolyFun’s bundled ukb_regions.tsv.gz when unset.
-    ld_regions_file: Path | None = None
-    # Plink prefix (no .bed/.bim/.fam suffix) when ld_mode == "plink".
     ld_plink_prefix: Path | None = None
-    pvalue_cutoff: float = 5e-8
     max_concurrent_jobs: int = 4
-
-
-class GwasDataset(_Base):
-    """Labels this GWAS / ancestry run (for logs and optional path layout).
-
-    When you pass ``--gwas-id SLUG`` on the CLI (and SLUG is not ``default``),
-    :func:`apply_gwas_cli_overrides` routes harmonised sumstats and pipeline
-    outputs under ``data/gwas/{SLUG}/`` and ``output/{SLUG}/``. You can
-    instead set ``paths.*`` explicitly in YAML for full control.
-
-    Set ``auto_paths: true`` with a non-default ``id`` to get the same layout
-    from YAML alone (no ``--gwas-id`` on the command line).
-    """
-
-    id: str = "default"
-    auto_paths: bool = False
 
 
 class Config(_Base):
@@ -120,7 +106,6 @@ class Config(_Base):
     background: Background = Background()
     prior: PriorParams = PriorParams()
     finemap: FineMapParams = FineMapParams()
-    gwas_dataset: GwasDataset = GwasDataset()
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -131,50 +116,6 @@ def load_config(path: Path | None = None) -> Config:
     with cfg_path.open("r") as fh:
         raw = yaml.safe_load(fh) or {}
     return Config.model_validate(raw)
-
-
-def apply_gwas_cli_overrides(
-    cfg: Config,
-    *,
-    gwas_id: str | None = None,
-    gwas_raw: Path | str | None = None,
-) -> None:
-    """Apply ``--gwas-id`` / ``--gwas-raw`` from the CLI (mutates ``cfg``).
-
-    * ``--gwas-raw PATH`` — overrides ``paths.gwas_raw`` whenever provided.
-    * ``--gwas-id SLUG`` — when this argument is **passed** (not omitted), sets
-      ``gwas_dataset.id`` to ``SLUG`` and, if ``SLUG`` is not ``default``,
-      convention paths: ``output/{SLUG}/`` and
-      ``data/gwas/{SLUG}/sumstats.hg19.parquet`` for harmonised output.
-
-    If you omit ``--gwas-id`` entirely, ``gwas_dataset`` and ``paths`` from YAML
-    are left unchanged (use a per-study YAML for bespoke paths).
-
-    For layout driven purely from YAML without repeating paths, set
-    ``gwas_dataset.auto_paths: true`` and a non-default ``gwas_dataset.id``.
-    """
-    if gwas_raw is not None:
-        cfg.paths.gwas_raw = Path(gwas_raw)
-
-    if gwas_id is not None:
-        slug = gwas_id.strip() or "default"
-        cfg.gwas_dataset.id = slug
-        if slug != "default":
-            cfg.paths.output_dir = Path("output") / slug
-            cfg.paths.gwas_harmonised = Path("data/gwas") / slug / "sumstats.hg19.parquet"
-            cfg.paths.ld_cache = Path("data/ld_cache") / slug
-
-
-def apply_gwas_auto_paths_from_yaml(cfg: Config) -> None:
-    """If ``gwas_dataset.auto_paths`` is true, mirror :func:`apply_gwas_cli_overrides` layout."""
-    if not cfg.gwas_dataset.auto_paths:
-        return
-    slug = (cfg.gwas_dataset.id or "default").strip() or "default"
-    if slug == "default":
-        return
-    cfg.paths.output_dir = Path("output") / slug
-    cfg.paths.gwas_harmonised = Path("data/gwas") / slug / "sumstats.hg19.parquet"
-    cfg.paths.ld_cache = Path("data/ld_cache") / slug
 
 
 def resolve_project_path(cfg: Config, p: Path | None) -> Path | None:
@@ -214,24 +155,36 @@ def validate_finemap_ld(cfg: Config) -> None:
     """Fail fast on inconsistent LD settings before spawning FINEMAP."""
     if cfg.finemap.ld_mode == "plink":
         resolve_plink_prefix(cfg)
-        return
-    if cfg.finemap.ld_regions_file is not None:
-        rf = resolve_project_path(cfg, Path(cfg.finemap.ld_regions_file))
-        if rf is None or not rf.exists():
-            raise FileNotFoundError(
-                f"finemap.ld_regions_file not found: {cfg.finemap.ld_regions_file}"
-            )
 
 
-def apply_ld_cli_overrides(
+def apply_cli_overrides(
     cfg: Config,
     *,
+    gwas_raw: Path | str | None = None,
+    output_dir: Path | str | None = None,
+    loci: Path | str | None = None,
+    prior_mode: str | None = None,
     ld_mode: str | None = None,
     ld_npz_url_prefix: str | None = None,
     ld_plink_prefix: Path | str | None = None,
-    ld_regions_file: Path | str | None = None,
 ) -> None:
-    """Optional CLI overrides for LD (mutates ``cfg``)."""
+    """Apply CLI overrides to ``cfg`` in place.
+
+    Each kwarg mirrors one CLI flag; when not ``None`` it wins over YAML.
+    """
+    if gwas_raw is not None:
+        cfg.paths.gwas_raw = Path(gwas_raw)
+    if output_dir is not None:
+        cfg.paths.output_dir = Path(output_dir)
+    if loci is not None:
+        cfg.paths.loci = Path(loci)
+    if prior_mode is not None:
+        m = prior_mode.strip().lower()
+        if m not in ("none", "entropy"):
+            raise ValueError(
+                f"Invalid --prior {prior_mode!r}; use none or entropy."
+            )
+        cfg.prior.mode = m  # type: ignore[assignment]
     if ld_mode is not None:
         m = ld_mode.strip().lower().replace("-", "_")
         if m not in ("precomputed_npz", "plink"):
@@ -243,29 +196,29 @@ def apply_ld_cli_overrides(
         cfg.finemap.ld_npz_url_prefix = ld_npz_url_prefix
     if ld_plink_prefix is not None:
         cfg.finemap.ld_plink_prefix = Path(ld_plink_prefix)
-    if ld_regions_file is not None:
-        cfg.finemap.ld_regions_file = Path(ld_regions_file)
 
 
 def load_pipeline_config(
     path: Path | None = None,
     *,
-    gwas_id: str | None = None,
     gwas_raw: Path | str | None = None,
+    output_dir: Path | str | None = None,
+    loci: Path | str | None = None,
+    prior_mode: str | None = None,
     ld_mode: str | None = None,
     ld_npz_url_prefix: str | None = None,
     ld_plink_prefix: Path | str | None = None,
-    ld_regions_file: Path | str | None = None,
 ) -> Config:
-    """Load YAML, optional YAML-driven auto paths, then CLI GWAS + LD overrides."""
+    """Load YAML, then apply CLI overrides."""
     cfg = load_config(path)
-    apply_gwas_auto_paths_from_yaml(cfg)
-    apply_gwas_cli_overrides(cfg, gwas_id=gwas_id, gwas_raw=gwas_raw)
-    apply_ld_cli_overrides(
+    apply_cli_overrides(
         cfg,
+        gwas_raw=gwas_raw,
+        output_dir=output_dir,
+        loci=loci,
+        prior_mode=prior_mode,
         ld_mode=ld_mode,
         ld_npz_url_prefix=ld_npz_url_prefix,
         ld_plink_prefix=ld_plink_prefix,
-        ld_regions_file=ld_regions_file,
     )
     return cfg

@@ -1,7 +1,7 @@
 [project]
 name = "polyfun-gpn"
 version = "0.1.0"
-description = "PolyFun + FINEMAP fine-mapping with entropy-derived per-SNP priors"
+description = "PolyFun + FINEMAP fine-mapping with optional entropy-derived per-SNP priors"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

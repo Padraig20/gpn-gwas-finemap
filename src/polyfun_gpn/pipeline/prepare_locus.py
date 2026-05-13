@@ -1,22 +1,20 @@
-"""Build per-locus PolyFun sumstats with SNPVAR priors.
+"""Build per-locus PolyFun sumstats with optional entropy-derived SNPVAR.
 
 For each locus we:
   1. Slice the harmonised genome-wide sumstats parquet to the locus window
      (hg19 coordinates).
-  2. (Optionally) lift each SNP position to the entropy build (hg38) and
-     look up its entropy.
-  3. Compute SNPVAR per ``prior_mode``.
-  4. Write ``output/loci/{prior}/{locus_id}/sumstats.gz`` in the format
-     PolyFun's ``finemapper.py`` expects: tab-separated with PolyFun
-     columns (``SNPVAR`` only for ``entropy`` / ``uniform``).
+  2. For ``--prior entropy``: look up entropy (with hg19→hg38 liftover when
+     ``builds.gwas != builds.entropy``) and compute SNPVAR with locus-median
+     fallback for misses.
+  3. Write ``output/loci/{prior}/{locus_id}/sumstats.tsv`` in the format
+     PolyFun's ``finemapper.py`` expects (``SNPVAR`` column for the
+     ``entropy`` mode; omitted for ``none``).
 
-Output layout:
-    output/loci/{prior}/{locus_id}/
-        sumstats.gz        # PolyFun input
+Output layout per locus:
+    output_dir/loci/{prior}/{locus_id}/
+        sumstats.tsv       # PolyFun input
         snpvar_audit.tsv   # full per-SNP table including prior_source
-
-We keep the audit file unzipped/uncompressed so it can be inspected easily
-even if FINEMAP fails on the locus.
+        locus.json         # small descriptor
 """
 
 from __future__ import annotations
@@ -24,7 +22,6 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 import polars as pl
@@ -36,9 +33,6 @@ from ..entropy.lookup import lookup_entropy
 from ..entropy.priors import attach_priors
 from ..loci.demo import Locus, load_loci
 from ..loci.select import UKBBlock, snap_to_ukb_blocks
-
-
-POLYFUN_COLUMNS_BASE = ["SNP", "CHR", "BP", "A1", "A2", "Z", "N", "P", "MAF"]
 
 
 def _slice_sumstats(sumstats_path: Path, locus: Locus) -> pl.DataFrame:
@@ -85,23 +79,20 @@ def prepare_locus(
     df = _slice_sumstats(sumstats_src, locus)
     n_total = df.height
 
-    if prior_mode == "entropy" and n_total > 0:
-        density, edges = load_background(cfg)
+    n_with_entropy = 0
+
+    if n_total > 0 and prior_mode == "entropy":
         entropy_values = _resolve_entropy_for_locus(cfg, df)
-        df = attach_priors(df, entropy_values, density, edges, cfg.prior, prior_mode="entropy")
         n_with_entropy = int(np.isfinite(entropy_values).sum())
-    elif prior_mode == "uniform" and n_total > 0:
+        density, edges = load_background(cfg)
         df = attach_priors(
             df,
-            np.full(n_total, np.nan, dtype=np.float32),
-            np.empty(0),
-            np.empty(0),
+            entropy_values,
+            density,
+            edges,
             cfg.prior,
-            prior_mode="uniform",
+            prior_mode=prior_mode,
         )
-        n_with_entropy = 0
-    else:
-        n_with_entropy = 0
 
     out_dir = (
         cfg.paths.absolute("output_dir")
@@ -154,8 +145,9 @@ def prepare_loci(
             f"-> LD block {block.url_suffix}"
         )
         out.append(prepare_locus(cfg, locus, block, prior_mode=prior_mode))
+        d = out[-1]
         print(
-            f"[prepare]   {out[-1]['n_variants']:,} variants, "
-            f"{out[-1]['n_with_entropy']:,} with entropy"
+            f"[prepare]   {d['n_variants']:,} variants  "
+            f"entropy={d['n_with_entropy']:,}"
         )
     return out

@@ -20,5 +20,5 @@ output/
 .pytest_cache/
 .uv-cache/
 
-data
+data/
 uv.lock
