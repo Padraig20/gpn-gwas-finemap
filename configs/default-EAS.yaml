@@ -21,7 +21,7 @@ paths:
   polyfun_dir: external/polyfun
   finemap_exe: external/bin/finemap
   output_dir: output/EAS
-  loci: configs/loci_demo.tsv
+  loci: configs/loci_shared_EUR_EAS.tsv
 
 builds:
   gwas: hg19
