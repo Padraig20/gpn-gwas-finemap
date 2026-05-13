@@ -74,6 +74,22 @@ bash scripts/compute_ld/prepare_unrelated_reference.sh EUR
 bash scripts/compute_ld/prepare_unrelated_reference.sh EAS
 ```
 
+What the script does, in order:
+
+1. Convert the related-individuals list to PLINK's `FID  IID` two-column form.
+2. Scan `allchr.${ANC}.biallelicsnps.bim` with PLINK 1.9's
+   `--list-duplicate-vars ids-only suppress-first` to find variants that
+   share `(chrom, bp, allele-set)` — i.e. mirror-encoded biallelic SNPs
+   like `A/C` plus `C/A` at the same position. PolyFun's `set_snpid_index`
+   normalises alleles alphabetically when building its `snpid` and rejects
+   the whole panel if any normalised duplicate survives, so we have to
+   drop them now or fine-mapping aborts per locus.
+3. `--remove` related individuals and `--exclude` the duplicate variant IDs
+   in a single `--make-bed` pass.
+4. Re-scan the output `.bim` with a one-line awk that re-derives the
+   normalised snpid and reports residual duplicates (should always be 0).
+   The script logs a `WARNING` and a hint if any survive.
+
 Output (default `data/ld_panels/`):
 
 ```
@@ -167,6 +183,19 @@ uv run polyfun-gpn run -c configs/default-EAS.yaml \
   `REFDIR`/`BFILE`.
 * **PolyFun finds 0 overlapping SNPs.** Almost always a build mismatch
   (hg19 ⟷ hg38). See the warning at the top.
+* **`ValueError: Duplicate SNPs were found in the input data` from
+  PolyFun's `set_snpid_index`.** The printed rows themselves look unique
+  because pandas only shows the *second* occurrence of each duplicated
+  `snpid = chrom.bp.A1.A2` (alleles alphabetically sorted). The first
+  occurrences are hidden. Cause: the source `allchr.${ANC}.biallelicsnps`
+  contains rows like `1 rs1 0 100 A C` and `1 rs2 0 100 C A` — same SNP
+  encoded with swapped alleles. The current `prepare_unrelated_reference.sh`
+  drops these via `--list-duplicate-vars`, but older outputs you built
+  before that fix won't be clean. Just `--overwrite`:
+
+  ```bash
+  bash scripts/compute_ld/prepare_unrelated_reference.sh EUR --overwrite
+  ```
 * **Empty per-locus PLINK.** Check `data/ld_panels/loci/<ANC>/<id>.plink.log` —
   a locus on chrY/chrM (or an X locus when the reference is autosomes-only)
   will yield 0 variants. The extract script logs and skips these instead of

@@ -1,7 +1,7 @@
 # polyfun-gpn configuration for the EUR T2D meta-analysis.
 #
 # Every CLI flag has a YAML counterpart so the full pipeline can be driven
-# from one `-c configs/default-EUR.yaml`. CLI flags, when passed, win.
+# from one `-c configs/default-EUR-entropy.yaml`. CLI flags, when passed, win.
 #
 #   --gwas-raw PATH        paths.gwas_raw
 #   --output-dir PATH      paths.output_dir
@@ -20,7 +20,7 @@ paths:
   ld_cache: data/ld_cache
   polyfun_dir: external/polyfun
   finemap_exe: external/bin/finemap
-  output_dir: output/EUR/none
+  output_dir: output/EUR/entropy
   loci: configs/loci_shared_EUR_EAS.tsv
 
 builds:
@@ -36,7 +36,7 @@ background:
   seed: 42
 
 prior:
-  mode: none       # none | entropy
+  mode: entropy       # none | entropy
   tau: 1.0
   epsilon: 1.0e-6
 

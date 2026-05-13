@@ -1,7 +1,7 @@
-# polyfun-gpn configuration for the EUR T2D meta-analysis.
+# polyfun-gpn configuration for the EAS T2D meta-analysis.
 #
 # Every CLI flag has a YAML counterpart so the full pipeline can be driven
-# from one `-c configs/default-EUR.yaml`. CLI flags, when passed, win.
+# from one `-c configs/default-EAS-entropy.yaml`. CLI flags, when passed, win.
 #
 #   --gwas-raw PATH        paths.gwas_raw
 #   --output-dir PATH      paths.output_dir
@@ -13,14 +13,14 @@
 
 paths:
   entropy_dir: data/entropy
-  gwas_raw: data/gwas/EUR/EUR_Metal_LDSC-CORR_Neff.v2.txt
-  gwas_harmonised: data/gwas/EUR/sumstats.hg19.parquet
+  gwas_raw: data/gwas/EAS/EAS_Metal_LDSC-CORR_Neff.v2.txt
+  gwas_harmonised: data/gwas/EAS/sumstats.hg19.parquet
   background: data/background/entropy_bg.npz
   reference_dir: data/reference
   ld_cache: data/ld_cache
   polyfun_dir: external/polyfun
   finemap_exe: external/bin/finemap
-  output_dir: output/EUR/none
+  output_dir: output/EAS/entropy
   loci: configs/loci_shared_EUR_EAS.tsv
 
 builds:
@@ -36,7 +36,7 @@ background:
   seed: 42
 
 prior:
-  mode: none       # none | entropy
+  mode: entropy       # none | entropy
   tau: 1.0
   epsilon: 1.0e-6
 
@@ -46,10 +46,11 @@ finemap:
   memory_gb: 4
   threads: 4
   locus_window_bp: 1500000
-  # LD source: plink uses the ancestry-matched 1000G reference built by
-  # scripts/compute_ld/prepare_unrelated_reference.sh; the NPZ prefix is
-  # kept here as a fallback so you can flip ld_mode without losing it.
+  # LD source: plink uses the ancestry-matched 1000G EAS panel built by
+  # scripts/compute_ld/prepare_unrelated_reference.sh. The Broad NPZ prefix
+  # is UKB white-British (~EUR), which is wrong for EAS -- keep ld_mode:
+  # plink here unless you're deliberately running EAS sumstats against EUR LD.
   ld_mode: plink
   ld_npz_url_prefix: https://broad-alkesgroup-ukbb-ld.s3.amazonaws.com/UKBB_LD/
-  ld_plink_prefix: data/ld_panels/1000G.EUR.unrelated
+  ld_plink_prefix: data/ld_panels/1000G.EAS.unrelated
   max_concurrent_jobs: 4

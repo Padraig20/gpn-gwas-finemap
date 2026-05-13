@@ -20,7 +20,7 @@ paths:
   ld_cache: data/ld_cache
   polyfun_dir: external/polyfun
   finemap_exe: external/bin/finemap
-  output_dir: output/EAS
+  output_dir: output/EAS/none
   loci: configs/loci_shared_EUR_EAS.tsv
 
 builds:
@@ -36,7 +36,7 @@ background:
   seed: 42
 
 prior:
-  mode: entropy       # none | entropy
+  mode: none       # none | entropy
   tau: 1.0
   epsilon: 1.0e-6
 
