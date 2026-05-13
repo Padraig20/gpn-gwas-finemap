@@ -51,10 +51,17 @@ done
 REFDIR="${REFDIR:-/links/groups/cai/REF/1KGP/phase3}"
 RELATED="${RELATED:-/links/groups/cai/REF/1KGP/20140625_related_individuals.txt}"
 OUT_DIR="${OUT_DIR:-data/ld_panels}"
+# PolyFun keys its LD cache on `os.path.basename(plink_prefix) + .chr.bp1.bp2.{npz,gz}`,
+# so any stale cache from a previous (dirty) panel build will be reloaded
+# verbatim by `find_cached_ld_file` next run and re-trigger PolyFun's
+# duplicate check. We invalidate the matching cache files alongside the
+# panel here. Default matches `paths.ld_cache` in configs/default-*.yaml.
+LD_CACHE_DIR="${LD_CACHE_DIR:-data/ld_cache}"
 PLINK_BIN="${PLINK_BIN:-plink}"
 
 BFILE="${REFDIR}/allchr.${ANC}.biallelicsnps"
 OUT_PREFIX="${OUT_DIR}/1000G.${ANC}.unrelated"
+OUT_BASENAME="$(basename "${OUT_PREFIX}")"
 
 # Fail fast: all three PLINK files must exist, and the related list too.
 for ext in bed bim fam; do
@@ -134,6 +141,28 @@ if ! "${PLINK_BIN}" \
     echo "[ld] ${ANC}: ERROR -- PLINK make-bed failed (see output above)." >&2
     echo "[ld] ${ANC}:   PLINK_BIN=${PLINK_BIN} ; ${PLINK_BIN} --version  may help diagnose." >&2
     exit 1
+fi
+
+# Invalidate any stale LD-cache files PolyFun may have written from an
+# earlier (dirty) panel build. PolyFun's `find_cached_ld_file` matches on
+# `{basename}.{chr}.{bp1}.{bp2}.{npz,gz}` -- it reads the .gz SNP list
+# verbatim and re-runs set_snpid_index on it, so an old .gz with the
+# mirror-encoded duplicates would re-trigger the same ValueError even
+# after we rebuilt the panel. The .npz alone isn't enough; the .gz is
+# what carries the duplicates. Wipe matching {npz,gz,bcor} pairs.
+if [[ -d "${LD_CACHE_DIR}" ]]; then
+    CACHE_HITS=( "${LD_CACHE_DIR}/${OUT_BASENAME}".*.{npz,gz,bcor} )
+    # The glob can stay literal when nothing matches; filter to real files.
+    REMOVED=0
+    for f in "${CACHE_HITS[@]}"; do
+        if [[ -e "$f" ]]; then
+            rm -f "$f"
+            REMOVED=$((REMOVED + 1))
+        fi
+    done
+    if [[ "${REMOVED}" -gt 0 ]]; then
+        echo "[ld] ${ANC}: cleared ${REMOVED} stale LD-cache files under ${LD_CACHE_DIR}/"
+    fi
 fi
 
 # Sanity check: how many samples / variants ended up in the output, and

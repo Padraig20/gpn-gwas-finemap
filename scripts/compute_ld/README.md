@@ -91,7 +91,13 @@ What the script does, in order:
 3. `--remove` related individuals and `--exclude` the duplicate variant IDs
    in a single `--make-bed` pass. PLINK's stdout/stderr stream straight to
    the terminal so any failure is visible immediately in cluster logs.
-4. Re-scan the output `.bim` with a second one-line awk that re-derives the
+4. Invalidate stale LD-cache files under `data/ld_cache/` keyed on this
+   panel basename — PolyFun's `find_cached_ld_file` keys on
+   `{basename}.{chr}.{bp1}.{bp2}.{npz,gz,bcor}` and reads the sibling
+   `.gz` SNP list verbatim. If we left a `.gz` from a previous dirty
+   build, the duplicate-check would refire next run even though the
+   panel is now clean. Override with `LD_CACHE_DIR=…`.
+5. Re-scan the output `.bim` with a second one-line awk that re-derives the
    normalised snpid and reports residual duplicates (should always be 0).
    The script logs a `WARNING` and a hint if any survive.
 
@@ -202,13 +208,22 @@ uv run polyfun-gpn run -c configs/default-EAS.yaml \
   bash scripts/compute_ld/prepare_unrelated_reference.sh EUR --overwrite
   ```
 
-  Also clear any cached LD npz from the failed run -- the cache key is
-  the plink prefix + region, not the BIM contents, so a stale dirty
-  matrix would trip the same check on retry:
+  `prepare_unrelated_reference.sh` now wipes `data/ld_cache/<basename>.*.{npz,gz,bcor}`
+  on every rebuild. If you have caches in a non-default location, set
+  `LD_CACHE_DIR=...` to point at the same directory as `paths.ld_cache`
+  in your YAML. If you've already rebuilt the panel by hand and want to
+  purge the cache without re-running the script:
 
   ```bash
-  rm -f data/ld_cache/1000G.${ANC}.unrelated.*.npz
+  rm -f data/ld_cache/1000G.${ANC}.unrelated.*.npz \
+        data/ld_cache/1000G.${ANC}.unrelated.*.gz \
+        data/ld_cache/1000G.${ANC}.unrelated.*.bcor
   ```
+
+  The `.gz` cleanup is the critical bit -- it's the SNP-list metadata
+  PolyFun's `find_cached_ld_file` re-loads (and feeds back through
+  `set_snpid_index`), so a leftover `.gz` will reproduce this exact
+  ValueError even after a clean panel build.
 * **Empty per-locus PLINK.** Check `data/ld_panels/loci/<ANC>/<id>.plink.log` —
   a locus on chrY/chrM (or an X locus when the reference is autosomes-only)
   will yield 0 variants. The extract script logs and skips these instead of

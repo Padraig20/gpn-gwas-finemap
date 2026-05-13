@@ -20,7 +20,7 @@ paths:
   ld_cache: data/ld_cache
   polyfun_dir: external/polyfun
   finemap_exe: external/bin/finemap
-  output_dir: output/EAS/none
+  output_dir: output/EAS
   loci: configs/loci_shared_EUR_EAS.tsv
 
 builds:
